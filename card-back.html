@@ -143,7 +143,7 @@ window.toggleChild = function(childId) {
   if (!alreadyDone) {
     // Mark done: move card to done list via REST API, fall back to completions store
     if (s.doneListId) {
-      t.getRestApi().then(function(api) {
+      t.getRestApi({ scope: 'write' }).then(function(api) {
         return api.put('/1/cards/' + childId, { idList: s.doneListId });
       }).then(function() {
         load();
