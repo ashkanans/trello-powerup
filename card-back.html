@@ -165,7 +165,7 @@ function openPicker(title, mode, candidates, mouseEvent) {
   var s = window._state;
   t.popup({
     title: title,
-    url: t.signUrl('./card-picker.html'),
+    url: './card-picker.html',
     mouseEvent: mouseEvent,
     args: {
       mode: mode,
@@ -178,7 +178,11 @@ function openPicker(title, mode, candidates, mouseEvent) {
   });
 }
 
+// Reload after popup closes (Trello calls render() again when popup is dismissed)
 t.render(function() { load(); });
+
+// Poll every 2s while visible so the panel updates after a picker selection
+setInterval(function() { load(); }, 2000);
 </script>
 </body>
 </html>
