@@ -14,11 +14,10 @@
 <script>
 var t = TrelloPowerUp.iframe();
 
-var args = t.arg('args') || {};
-var mode = args.mode || 'parent';
-var currentCardId = args.currentCardId || '';
+var mode = t.arg('mode') || 'parent';
+var currentCardId = t.arg('currentCardId') || '';
 var candidates = [];
-try { candidates = JSON.parse(args.candidates || '[]'); } catch(e) {}
+try { candidates = JSON.parse(t.arg('candidates') || '[]'); } catch(e) {}
 
 function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
