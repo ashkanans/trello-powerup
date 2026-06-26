@@ -14,7 +14,7 @@ if (window.self === window.top) {
   document.body.innerHTML = '<h2>Parent-Child Relations</h2><p style="margin-top:8px;color:#5e6c84">This is a Trello Power-Up connector. It only works when loaded inside Trello.</p>';
 } else {
 
-var POWERUP_ICON = 'https://cdn.jsdelivr.net/npm/heroicons@1.0.6/outline/link.svg';
+var POWERUP_ICON = 'https://ashkanans.github.io/trello-powerup/icon.svg';
 
 function getAncestors(cardId, relations) {
   var ancestors = new Set();
@@ -45,7 +45,7 @@ TrelloPowerUp.initialize({
 
   'card-buttons': function(t, options) {
     console.log('[PCR] card-buttons capability called');
-    return [
+    var buttons = [
       {
         icon: POWERUP_ICON,
         text: 'Add Parent',
@@ -130,6 +130,8 @@ TrelloPowerUp.initialize({
         }
       }
     ];
+    console.log('[PCR] card-buttons returning', buttons.length, 'buttons:', buttons.map(function(b){ return b.text; }));
+    return buttons;
   },
 
   'card-badges': function(t, options) {
