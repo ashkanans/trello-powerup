@@ -166,7 +166,8 @@ TrelloPowerUp.initialize({
         badges.push({
           text: pct + '% (' + done + '/' + total + ')',
           color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
-          icon: POWERUP_ICON
+          icon: POWERUP_ICON,
+          refresh: 10
         });
       }
 
@@ -204,7 +205,8 @@ TrelloPowerUp.initialize({
         badges.push({
           text: pct + '% (' + done + '/' + total + ')',
           color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
-          icon: POWERUP_ICON
+          icon: POWERUP_ICON,
+          refresh: 10
         });
       }
 
