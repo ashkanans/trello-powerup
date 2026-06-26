@@ -54,7 +54,7 @@ function render(currentCard, allCards, relations) {
     html += '</span>';
   } else {
     html += '<span class="empty-state">None</span> ';
-    html += '<button class="btn btn-ghost" onclick="pickParent()" style="margin-top:4px">Set parent</button>';
+    html += '<button class="btn btn-ghost" onclick="pickParent(event)" style="margin-top:4px">Set parent</button>';
   }
   html += '</div>';
 
@@ -73,7 +73,7 @@ function render(currentCard, allCards, relations) {
   } else {
     html += '<span class="empty-state">None</span>';
   }
-  html += '<br><button class="btn btn-ghost" onclick="pickChild()" style="margin-top:6px">Add child card</button>';
+  html += '<br><button class="btn btn-ghost" onclick="pickChild(event)" style="margin-top:6px">Add child card</button>';
   html += '</div>';
 
   document.getElementById('app').innerHTML = html;
@@ -108,7 +108,7 @@ window.removeChild = function(childId) {
   }).then(load);
 };
 
-window.pickParent = function() {
+window.pickParent = function(e) {
   var s = window._state;
   // Exclude self, current children (would create cycle), and cards that are
   // already ancestors of this card.
@@ -132,10 +132,10 @@ window.pickParent = function() {
       !ancestors.has(c.id);
   });
 
-  openPicker('Set Parent Card', 'parent', candidates);
+  openPicker('Set Parent Card', 'parent', candidates, e);
 };
 
-window.pickChild = function() {
+window.pickChild = function(e) {
   var s = window._state;
   var childIds = new Set(
     Object.entries(s.relations)
@@ -158,14 +158,15 @@ window.pickChild = function() {
       c.id !== s.currentCard.id;
   });
 
-  openPicker('Add Child Card', 'child', candidates);
+  openPicker('Add Child Card', 'child', candidates, e);
 };
 
-function openPicker(title, mode, candidates) {
+function openPicker(title, mode, candidates, mouseEvent) {
   var s = window._state;
   t.popup({
     title: title,
     url: t.signUrl('./card-picker.html'),
+    mouseEvent: mouseEvent,
     args: {
       mode: mode,
       currentCardId: s.currentCard.id,
