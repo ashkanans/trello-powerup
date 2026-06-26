@@ -38,17 +38,23 @@ function escHtml(str) {
 }
 
 function render(currentCard, allCards, relations, completions, lists) {
+  console.log('[PCR render] called for card=' + currentCard.id);
+  console.log('[PCR render] lists:', lists.map(function(l) { return '"' + l.name + '" id=' + l.id; }));
+
   var cardMap = {};
   allCards.forEach(function(c) { cardMap[c.id] = c; });
 
-  var doneListIds = new Set(
-    lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
-  );
-  var doneList = lists.find(function(l) { return DONE_PAT.test(l.name); });
+  var doneLists = lists.filter(function(l) { return DONE_PAT.test(l.name); });
+  var doneListIds = new Set(doneLists.map(function(l) { return l.id; }));
+  var doneList = doneLists[0] || null;
+
+  console.log('[PCR render] done lists matched by DONE_PAT:', doneLists.map(function(l) { return '"' + l.name + '"'; }));
+  console.log('[PCR render] doneListId:', doneList ? doneList.id : 'NONE — no list matches DONE_PAT');
 
   function isDoneByList(id) {
     var card = cardMap[id];
-    return !!(card && doneListIds.has(card.idList));
+    var result = !!(card && doneListIds.has(card.idList));
+    return result;
   }
   function isDone(id) {
     return !!completions[id] || isDoneByList(id);
@@ -61,6 +67,12 @@ function render(currentCard, allCards, relations, completions, lists) {
     .filter(function(id) { return relations[id] === currentCard.id; })
     .map(function(id) { return cardMap[id]; })
     .filter(Boolean);
+
+  console.log('[PCR render] children count:', myChildren.length);
+  myChildren.forEach(function(child) {
+    var card = cardMap[child.id];
+    console.log('[PCR render]   child id=' + child.id + ' idList=' + (card ? card.idList : 'NOT IN MAP') + ' byList=' + isDoneByList(child.id) + ' byCompletion=' + !!completions[child.id] + ' isDone=' + isDone(child.id));
+  });
 
   var html = '';
 
@@ -78,6 +90,7 @@ function render(currentCard, allCards, relations, completions, lists) {
     var doneCount = myChildren.filter(function(c) { return isDone(c.id); }).length;
     var total = myChildren.length;
     var pct = Math.round((doneCount / total) * 100);
+    console.log('[PCR render] progress: ' + doneCount + '/' + total + ' = ' + pct + '%');
 
     html += '<div class="progress-header">';
     html += '<span class="progress-text">' + pct + '% complete</span>';
@@ -121,6 +134,7 @@ function render(currentCard, allCards, relations, completions, lists) {
 }
 
 function load() {
+  console.log('[PCR load] fetching data at', new Date().toISOString());
   Promise.all([
     t.card('id', 'idShort', 'name'),
     t.cards('id', 'name', 'idShort', 'idList'),
@@ -128,58 +142,84 @@ function load() {
     getCompletions(),
     t.lists('id', 'name')
   ]).then(function(results) {
+    console.log('[PCR load] data received: card=' + results[0].id + ' allCards=' + results[1].length + ' lists=' + results[4].length);
     render(results[0], results[1], results[2], results[3], results[4]);
+  }).catch(function(err) {
+    console.error('[PCR load] ERROR:', err);
   });
 }
 
 function moveCard(childId, targetListId) {
+  console.log('[PCR moveCard] moving card=' + childId + ' to list=' + targetListId);
   return t.getRestApi({ scope: 'write' }).then(function(api) {
+    console.log('[PCR moveCard] REST API obtained, calling PUT');
     return api.put('/1/cards/' + childId, { idList: targetListId });
+  }).then(function(result) {
+    console.log('[PCR moveCard] PUT succeeded, result:', result);
+    return result;
   });
 }
 
 window.toggleChild = function(childId) {
   var s = window._state;
-  if (!s) return;
+  if (!s) { console.warn('[PCR toggleChild] _state is null, ignoring'); return; }
 
-  var byList = !!(s.cardMap[childId] && s.doneListIds.has(s.cardMap[childId].idList));
+  var card = s.cardMap[childId];
+  var byList = !!(card && s.doneListIds.has(card.idList));
   var byCompletion = !!s.completions[childId];
   var alreadyDone = byList || byCompletion;
 
+  console.log('[PCR toggleChild] childId=' + childId + ' byList=' + byList + ' byCompletion=' + byCompletion + ' alreadyDone=' + alreadyDone + ' doneListId=' + s.doneListId);
+  if (card) console.log('[PCR toggleChild] card.idList=' + card.idList);
+  else console.warn('[PCR toggleChild] card NOT FOUND in cardMap');
+
   if (!alreadyDone) {
-    // Mark done: save origin list, then move card to done list
-    var originListId = s.cardMap[childId] && s.cardMap[childId].idList;
+    var originListId = card && card.idList;
+    console.log('[PCR toggleChild] marking DONE — originListId=' + originListId + ' doneListId=' + s.doneListId);
     if (s.doneListId) {
       getOrigins().then(function(origins) {
         if (originListId) origins[childId] = originListId;
+        console.log('[PCR toggleChild] saving origin ' + originListId + ' for card ' + childId);
         return t.set('board', 'shared', 'origins', origins);
       }).then(function() {
+        console.log('[PCR toggleChild] origin saved, calling moveCard');
         return moveCard(childId, s.doneListId);
-      }).then(load).catch(function() {
-        // REST failed — fall back to completions store
+      }).then(function() {
+        console.log('[PCR toggleChild] moveCard done, reloading');
+        load();
+      }).catch(function(err) {
+        console.error('[PCR toggleChild] moveCard FAILED:', err, '— falling back to completions');
         return getCompletions().then(function(c) {
           c[childId] = true;
           return t.set('board', 'shared', 'completions', c);
         }).then(load);
       });
     } else {
+      console.log('[PCR toggleChild] no doneListId found — using completions fallback');
       getCompletions().then(function(c) {
         c[childId] = true;
         return t.set('board', 'shared', 'completions', c);
       }).then(load);
     }
   } else if (byList) {
-    // Unmark done-by-list: move card back to its origin list
+    console.log('[PCR toggleChild] unmarking DONE (by list) — looking up origin');
     getOrigins().then(function(origins) {
       var originListId = origins[childId];
-      if (!originListId) return load(); // no origin saved — nothing to do
+      console.log('[PCR toggleChild] origin for ' + childId + ':', originListId || 'NOT SAVED');
+      if (!originListId) {
+        console.warn('[PCR toggleChild] no origin saved, cannot move back');
+        return load();
+      }
       return moveCard(childId, originListId).then(function() {
+        console.log('[PCR toggleChild] moved back to origin, clearing origin entry');
         delete origins[childId];
         return t.set('board', 'shared', 'origins', origins);
-      }).then(load);
+      }).then(load).catch(function(err) {
+        console.error('[PCR toggleChild] move-back FAILED:', err);
+      });
     });
   } else {
-    // Unmark done-by-completion: clear from completions store
+    console.log('[PCR toggleChild] unmarking DONE (by completion) — clearing completions');
     getCompletions().then(function(c) {
       delete c[childId];
       return t.set('board', 'shared', 'completions', c);
@@ -189,6 +229,7 @@ window.toggleChild = function(childId) {
 
 window.removeParent = function() {
   var s = window._state;
+  console.log('[PCR removeParent] called');
   getRelations().then(function(relations) {
     delete relations[s.currentCard.id];
     return t.set('board', 'shared', 'relations', relations);
@@ -196,14 +237,21 @@ window.removeParent = function() {
 };
 
 window.removeSubtask = function(childId) {
+  console.log('[PCR removeSubtask] called for childId=' + childId);
   getRelations().then(function(relations) {
     delete relations[childId];
     return t.set('board', 'shared', 'relations', relations);
   }).then(load);
 };
 
-t.render(function() { load(); });
-setInterval(function() { load(); }, 2000);
+t.render(function() {
+  console.log('[PCR] t.render() triggered at', new Date().toISOString());
+  load();
+});
+setInterval(function() {
+  console.log('[PCR] setInterval tick at', new Date().toISOString());
+  load();
+}, 2000);
 </script>
 </body>
 </html>

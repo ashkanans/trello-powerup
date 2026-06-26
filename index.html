@@ -15,6 +15,7 @@ if (window.self === window.top) {
 } else {
 
 var POWERUP_ICON = 'https://ashkanans.github.io/trello-powerup/icon.svg';
+var DONE_PAT = /✅|done|completato|fatto|complete/i;
 
 function getAncestors(cardId, relations) {
   var ancestors = new Set();
@@ -39,6 +40,51 @@ function getDescendants(cardId, relations) {
     });
   }
   return descendants;
+}
+
+function buildBadges(cardId, relations, completions, lists, allCards) {
+  var doneListIds = new Set(
+    lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
+  );
+  console.log('[PCR badges] lists fetched:', lists.map(function(l) { return l.name + '=' + l.id; }));
+  console.log('[PCR badges] done list IDs:', Array.from(doneListIds));
+
+  var cardListMap = {};
+  allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
+
+  function isDone(id) {
+    var byCompletion = !!completions[id];
+    var byList = doneListIds.has(cardListMap[id]);
+    return byCompletion || byList;
+  }
+
+  var badges = [];
+
+  var parentId = relations[cardId];
+  if (parentId) {
+    badges.push({ icon: POWERUP_ICON, text: '↑ subtask', color: 'blue' });
+  }
+
+  var children = Object.keys(relations).filter(function(id) { return relations[id] === cardId; });
+  console.log('[PCR badges] cardId=' + cardId + ' children:', children);
+
+  if (children.length > 0) {
+    children.forEach(function(id) {
+      console.log('[PCR badges]   child ' + id + ' idList=' + cardListMap[id] + ' byCompletion=' + !!completions[id] + ' byList=' + doneListIds.has(cardListMap[id]) + ' isDone=' + isDone(id));
+    });
+    var done = children.filter(isDone).length;
+    var total = children.length;
+    var pct = Math.round((done / total) * 100);
+    console.log('[PCR badges] progress: ' + done + '/' + total + ' = ' + pct + '%');
+    badges.push({
+      text: pct + '% (' + done + '/' + total + ')',
+      color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
+      icon: POWERUP_ICON,
+      refresh: 10
+    });
+  }
+
+  return badges;
 }
 
 TrelloPowerUp.initialize({
@@ -135,6 +181,7 @@ TrelloPowerUp.initialize({
   },
 
   'card-badges': function(t, options) {
+    console.log('[PCR card-badges] called at', new Date().toISOString());
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
@@ -147,47 +194,18 @@ TrelloPowerUp.initialize({
       var completions = results[2] || {};
       var lists = results[3] || [];
       var allCards = results[4] || [];
-      var badges = [];
-
-      var donePat = /✅|done|completato|fatto|complete/i;
-      var doneListIds = new Set(
-        lists.filter(function(l) { return donePat.test(l.name); }).map(function(l) { return l.id; })
-      );
-      var cardListMap = {};
-      allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
-      function isDone(id) { return !!completions[id] || doneListIds.has(cardListMap[id]); }
-
-      // Blue badge: this card is a subtask of something
-      var parentId = relations[cardId];
-      if (parentId) {
-        badges.push({
-          icon: POWERUP_ICON,
-          text: '↑ subtask',
-          color: 'blue'
-        });
-      }
-
-      // Progress badge: this card has subtasks
-      var children = Object.keys(relations).filter(function(id) {
-        return relations[id] === cardId;
-      });
-      if (children.length > 0) {
-        var done = children.filter(isDone).length;
-        var total = children.length;
-        var pct = Math.round((done / total) * 100);
-        badges.push({
-          text: pct + '% (' + done + '/' + total + ')',
-          color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
-          icon: POWERUP_ICON,
-          refresh: 10
-        });
-      }
-
+      console.log('[PCR card-badges] data loaded for cardId=' + cardId + ' lists=' + lists.length + ' cards=' + allCards.length);
+      var badges = buildBadges(cardId, relations, completions, lists, allCards);
+      console.log('[PCR card-badges] returning badges:', badges.map(function(b){ return b.text; }));
       return badges;
+    }).catch(function(err) {
+      console.error('[PCR card-badges] ERROR:', err);
+      return [];
     });
   },
 
   'card-detail-badges': function(t, options) {
+    console.log('[PCR card-detail-badges] called at', new Date().toISOString());
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
@@ -200,41 +218,13 @@ TrelloPowerUp.initialize({
       var completions = results[2] || {};
       var lists = results[3] || [];
       var allCards = results[4] || [];
-      var badges = [];
-
-      var donePat = /✅|done|completato|fatto|complete/i;
-      var doneListIds = new Set(
-        lists.filter(function(l) { return donePat.test(l.name); }).map(function(l) { return l.id; })
-      );
-      var cardListMap = {};
-      allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
-      function isDone(id) { return !!completions[id] || doneListIds.has(cardListMap[id]); }
-
-      var parentId = relations[cardId];
-      if (parentId) {
-        badges.push({
-          icon: POWERUP_ICON,
-          text: '↑ subtask',
-          color: 'blue'
-        });
-      }
-
-      var children = Object.keys(relations).filter(function(id) {
-        return relations[id] === cardId;
-      });
-      if (children.length > 0) {
-        var done = children.filter(isDone).length;
-        var total = children.length;
-        var pct = Math.round((done / total) * 100);
-        badges.push({
-          text: pct + '% (' + done + '/' + total + ')',
-          color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
-          icon: POWERUP_ICON,
-          refresh: 10
-        });
-      }
-
+      console.log('[PCR card-detail-badges] data loaded for cardId=' + cardId + ' lists=' + lists.length + ' cards=' + allCards.length);
+      var badges = buildBadges(cardId, relations, completions, lists, allCards);
+      console.log('[PCR card-detail-badges] returning badges:', badges.map(function(b){ return b.text; }));
       return badges;
+    }).catch(function(err) {
+      console.error('[PCR card-detail-badges] ERROR:', err);
+      return [];
     });
   },
 
