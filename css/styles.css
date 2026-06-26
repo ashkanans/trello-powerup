@@ -9,109 +9,174 @@ body {
   font-size: 13px;
   color: #172b4d;
   background: #fff;
-  padding: 8px 12px;
+  padding: 8px 12px 4px;
 }
 
-.section {
-  margin-bottom: 12px;
-}
+/* ── Parent row ─────────────────────────────────── */
 
-.section-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #5e6c84;
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
-}
-
-.card-chip {
-  display: inline-flex;
+.parent-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  background: #f4f5f7;
-  border: 1px solid #dfe1e6;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
-  font-weight: 500;
-  max-width: 100%;
-  overflow: hidden;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid #ebecf0;
+  margin-bottom: 10px;
 }
 
-.card-chip .chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.card-chip .chip-remove {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #97a0af;
+.parent-icon {
   font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
+  color: #0052cc;
   flex-shrink: 0;
 }
 
-.card-chip .chip-remove:hover {
+.parent-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-btn {
+  background: none;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  color: #97a0af;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.remove-btn:hover {
+  border-color: #eb5a46;
   color: #eb5a46;
 }
 
-.children-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+/* ── Progress bar ───────────────────────────────── */
+
+.progress-header {
+  margin-bottom: 5px;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: none;
-  border-radius: 4px;
-  padding: 5px 10px;
+.progress-text {
   font-size: 12px;
+  color: #5e6c84;
   font-weight: 500;
+}
+
+.progress-track {
+  height: 8px;
+  background: #ebecf0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #0052cc;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* ── Checklist ──────────────────────────────────── */
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.1s;
 }
 
-.btn-primary {
-  background: #0052cc;
-  color: #fff;
-}
-
-.btn-primary:hover {
-  background: #0065ff;
-}
-
-.btn-ghost {
+.checklist-item:hover {
   background: #f4f5f7;
-  color: #172b4d;
-  border: 1px solid #dfe1e6;
 }
 
-.btn-ghost:hover {
-  background: #ebecf0;
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #dfe1e6;
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.empty-state {
+.checkbox.checked {
+  background: #0052cc;
+  border-color: #0052cc;
+}
+
+.checkbox svg {
+  width: 12px;
+  height: 12px;
+}
+
+.checklist-label {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.checklist-label.done {
+  text-decoration: line-through;
   color: #97a0af;
-  font-style: italic;
+}
+
+.remove-child-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #c1c7d0;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.checklist-item:hover .remove-child-btn {
+  opacity: 1;
+}
+
+.remove-child-btn:hover {
+  color: #eb5a46;
+}
+
+/* ── Empty / loading ────────────────────────────── */
+
+.empty-hint {
   font-size: 12px;
+  color: #97a0af;
+  padding: 2px 0 4px;
+  line-height: 1.6;
 }
 
 .loading {
   color: #97a0af;
   font-size: 12px;
+  padding: 4px 0;
 }
 
-/* Picker popup styles */
+/* ── Picker popup ───────────────────────────────── */
+
 .picker-container {
   padding: 8px;
 }
@@ -123,11 +188,11 @@ body {
   border-radius: 4px;
   font-size: 13px;
   outline: none;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .picker-list {
-  max-height: 300px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -145,16 +210,32 @@ body {
   background: #f4f5f7;
 }
 
-.picker-item .item-id {
+.picker-item-active {
+  background: #e6f0ff;
+}
+
+.item-id {
   font-size: 11px;
   color: #97a0af;
   flex-shrink: 0;
+  min-width: 36px;
 }
 
-.picker-item .item-name {
+.item-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.item-selected {
+  font-weight: 500;
+}
+
+.item-check {
+  color: #0052cc;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .picker-empty {

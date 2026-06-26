@@ -11,177 +11,122 @@
 <script>
 var t = TrelloPowerUp.iframe();
 
-// Relationship data is stored entirely in one board-level key:
-// board.shared.relations = {
-//   [childCardId]: parentCardId,
-//   ...
-// }
-// This lets any card read/write all relationships without needing OAuth.
-
 function getRelations() {
   return t.get('board', 'shared', 'relations').then(function(r) { return r || {}; });
 }
 
-function setRelations(map) {
-  return t.set('board', 'shared', 'relations', map);
+function getCompletions() {
+  return t.get('board', 'shared', 'completions').then(function(c) { return c || {}; });
 }
 
 function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function render(currentCard, allCards, relations) {
+function render(currentCard, allCards, relations, completions) {
   var cardMap = {};
   allCards.forEach(function(c) { cardMap[c.id] = c; });
 
   var parentId = relations[currentCard.id] || null;
   var parent = parentId ? cardMap[parentId] : null;
 
-  var myChildren = Object.entries(relations)
-    .filter(function(entry) { return entry[1] === currentCard.id; })
-    .map(function(entry) { return cardMap[entry[0]]; })
+  var myChildren = Object.keys(relations)
+    .filter(function(id) { return relations[id] === currentCard.id; })
+    .map(function(id) { return cardMap[id]; })
     .filter(Boolean);
 
   var html = '';
 
-  // Parent section
-  html += '<div class="section">';
-  html += '<div class="section-label">Parent Card</div>';
+  // Parent row
   if (parent) {
-    html += '<span class="card-chip">';
-    html += '<span class="chip-name">#' + parent.idShort + ' ' + escHtml(parent.name) + '</span>';
-    html += '<button class="chip-remove" onclick="removeParent()" title="Remove parent">×</button>';
-    html += '</span>';
-  } else {
-    html += '<span class="empty-state">None</span> ';
-    html += '<button class="btn btn-ghost" onclick="pickParent(event)" style="margin-top:4px">Set parent</button>';
+    html += '<div class="parent-row">';
+    html += '<span class="parent-icon">↑</span>';
+    html += '<span class="parent-name">#' + parent.idShort + ' ' + escHtml(parent.name) + '</span>';
+    html += '<button class="remove-btn" onclick="removeParent()">Remove</button>';
+    html += '</div>';
   }
-  html += '</div>';
 
-  // Children section
-  html += '<div class="section">';
-  html += '<div class="section-label">Child Cards (' + myChildren.length + ')</div>';
+  // Subtasks section
   if (myChildren.length > 0) {
-    html += '<div class="children-list">';
+    var done = myChildren.filter(function(c) { return !!completions[c.id]; }).length;
+    var total = myChildren.length;
+    var pct = Math.round((done / total) * 100);
+
+    html += '<div class="progress-header">';
+    html += '<span class="progress-text">' + pct + '% complete</span>';
+    html += '</div>';
+
+    html += '<div class="progress-track">';
+    html += '<div class="progress-fill" style="width:' + pct + '%"></div>';
+    html += '</div>';
+
+    html += '<div class="checklist">';
     myChildren.forEach(function(child) {
-      html += '<span class="card-chip">';
-      html += '<span class="chip-name">#' + child.idShort + ' ' + escHtml(child.name) + '</span>';
-      html += '<button class="chip-remove" onclick="removeChild(\'' + child.id + '\')" title="Remove child">×</button>';
+      var checked = !!completions[child.id];
+      html += '<div class="checklist-item" onclick="toggleChild(\'' + child.id + '\')">';
+      html += '<div class="checkbox' + (checked ? ' checked' : '') + '">';
+      if (checked) {
+        html += '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">';
+        html += '<path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>';
+        html += '</svg>';
+      }
+      html += '</div>';
+      html += '<span class="checklist-label' + (checked ? ' done' : '') + '">';
+      html += '#' + child.idShort + ' ' + escHtml(child.name);
       html += '</span>';
+      html += '<button class="remove-child-btn" onclick="event.stopPropagation();removeChild(\'' + child.id + '\')" title="Remove subtask">×</button>';
+      html += '</div>';
     });
     html += '</div>';
-  } else {
-    html += '<span class="empty-state">None</span>';
+
+  } else if (!parent) {
+    html += '<p class="empty-hint">Use the <strong>Add Parent</strong> and <strong>Add SubTasks</strong> buttons above to link cards.</p>';
   }
-  html += '<br><button class="btn btn-ghost" onclick="pickChild(event)" style="margin-top:6px">Add child card</button>';
-  html += '</div>';
 
   document.getElementById('app').innerHTML = html;
   t.sizeTo('#app').catch(function() {});
 
-  // Cache state for picker callbacks
-  window._state = { currentCard: currentCard, allCards: allCards, relations: relations };
+  window._state = { currentCard: currentCard, relations: relations, completions: completions };
 }
 
 function load() {
   Promise.all([
     t.card('id', 'idShort', 'name'),
     t.cards('id', 'name', 'idShort'),
-    getRelations()
+    getRelations(),
+    getCompletions()
   ]).then(function(results) {
-    render(results[0], results[1], results[2]);
+    render(results[0], results[1], results[2], results[3]);
   });
 }
+
+window.toggleChild = function(childId) {
+  getCompletions().then(function(completions) {
+    if (completions[childId]) {
+      delete completions[childId];
+    } else {
+      completions[childId] = true;
+    }
+    return t.set('board', 'shared', 'completions', completions);
+  }).then(load);
+};
 
 window.removeParent = function() {
   var s = window._state;
   getRelations().then(function(relations) {
     delete relations[s.currentCard.id];
-    return setRelations(relations);
+    return t.set('board', 'shared', 'relations', relations);
   }).then(load);
 };
 
 window.removeChild = function(childId) {
   getRelations().then(function(relations) {
     delete relations[childId];
-    return setRelations(relations);
+    return t.set('board', 'shared', 'relations', relations);
   }).then(load);
 };
 
-window.pickParent = function(e) {
-  var s = window._state;
-  // Exclude self, current children (would create cycle), and cards that are
-  // already ancestors of this card.
-  var childIds = new Set(
-    Object.entries(s.relations)
-      .filter(function(e) { return e[1] === s.currentCard.id; })
-      .map(function(e) { return e[0]; })
-  );
-
-  // Walk up to find all ancestors to prevent cycles
-  var ancestors = new Set();
-  var cur = s.relations[s.currentCard.id];
-  while (cur && !ancestors.has(cur)) {
-    ancestors.add(cur);
-    cur = s.relations[cur];
-  }
-
-  var candidates = s.allCards.filter(function(c) {
-    return c.id !== s.currentCard.id &&
-      !childIds.has(c.id) &&
-      !ancestors.has(c.id);
-  });
-
-  openPicker('Set Parent Card', 'parent', candidates, e);
-};
-
-window.pickChild = function(e) {
-  var s = window._state;
-  var childIds = new Set(
-    Object.entries(s.relations)
-      .filter(function(e) { return e[1] === s.currentCard.id; })
-      .map(function(e) { return e[0]; })
-  );
-
-  // Exclude self, existing children, and ancestors (prevent cycles)
-  var ancestors = new Set();
-  var cur = s.relations[s.currentCard.id];
-  while (cur && !ancestors.has(cur)) {
-    ancestors.add(cur);
-    cur = s.relations[cur];
-  }
-
-  var candidates = s.allCards.filter(function(c) {
-    return c.id !== s.currentCard.id &&
-      !childIds.has(c.id) &&
-      !ancestors.has(c.id) &&
-      c.id !== s.currentCard.id;
-  });
-
-  openPicker('Add Child Card', 'child', candidates, e);
-};
-
-function openPicker(title, mode, candidates, mouseEvent) {
-  var s = window._state;
-  t.popup({
-    title: title,
-    url: './card-picker.html',
-    mouseEvent: mouseEvent,
-    args: {
-      mode: mode,
-      currentCardId: s.currentCard.id,
-      candidates: JSON.stringify(candidates.map(function(c) {
-        return { id: c.id, name: c.name, idShort: c.idShort };
-      }))
-    },
-    height: 400
-  });
-}
-
-// Reload after popup closes (Trello calls render() again when popup is dismissed)
 t.render(function() { load(); });
-
-// Poll every 2s while visible so the panel updates after a picker selection
 setInterval(function() { load(); }, 2000);
 </script>
 </body>

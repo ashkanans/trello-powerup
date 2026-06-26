@@ -7,7 +7,7 @@
 </head>
 <body>
 <div class="picker-container">
-  <input class="search-input" id="search" type="text" placeholder="Search cards…" autofocus>
+  <input class="search-input" id="search" type="text" placeholder="Search Cards" autofocus>
   <div class="picker-list" id="list"></div>
 </div>
 
@@ -16,6 +16,9 @@ var t = TrelloPowerUp.iframe();
 
 var mode = t.arg('mode') || 'parent';
 var currentCardId = t.arg('currentCardId') || '';
+var currentSelectionId = t.arg('currentSelectionId') || '';
+var currentChildIds = new Set();
+try { currentChildIds = new Set(JSON.parse(t.arg('currentChildIds') || '[]')); } catch(e) {}
 var candidates = [];
 try { candidates = JSON.parse(t.arg('candidates') || '[]'); } catch(e) {}
 
@@ -29,26 +32,63 @@ function renderList(items) {
     list.innerHTML = '<div class="picker-empty">No cards found</div>';
     return;
   }
-  list.innerHTML = items.map(function(card) {
-    return '<div class="picker-item" onclick="selectCard(\'' + card.id + '\')">' +
-      '<span class="item-id">#' + card.idShort + '</span>' +
-      '<span class="item-name">' + escHtml(card.name) + '</span>' +
-      '</div>';
-  }).join('');
+
+  if (mode === 'children') {
+    list.innerHTML = items.map(function(card) {
+      var isChild = currentChildIds.has(card.id);
+      return '<div class="picker-item" onclick="toggleCard(\'' + card.id + '\')">' +
+        '<div class="checkbox' + (isChild ? ' checked' : '') + '">' +
+        (isChild
+          ? '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          : '') +
+        '</div>' +
+        '<span class="item-id">#' + card.idShort + '</span>' +
+        '<span class="item-name' + (isChild ? ' item-selected' : '') + '">' + escHtml(card.name) + '</span>' +
+        '</div>';
+    }).join('');
+  } else {
+    // parent mode: single select, shows a checkmark on the currently selected card
+    list.innerHTML = items.map(function(card) {
+      var isSel = card.id === currentSelectionId;
+      return '<div class="picker-item' + (isSel ? ' picker-item-active' : '') + '" onclick="selectCard(\'' + card.id + '\')">' +
+        '<span class="item-id">#' + card.idShort + '</span>' +
+        '<span class="item-name">' + escHtml(card.name) + '</span>' +
+        (isSel ? '<span class="item-check">✓</span>' : '') +
+        '</div>';
+    }).join('');
+  }
 }
+
+window.toggleCard = function(selectedCardId) {
+  t.get('board', 'shared', 'relations').then(function(relations) {
+    var map = relations || {};
+    if (currentChildIds.has(selectedCardId)) {
+      delete map[selectedCardId];
+      currentChildIds.delete(selectedCardId);
+    } else {
+      map[selectedCardId] = currentCardId;
+      currentChildIds.add(selectedCardId);
+    }
+    return t.set('board', 'shared', 'relations', map);
+  }).then(function() {
+    var q = document.getElementById('search').value.toLowerCase();
+    var filtered = q ? candidates.filter(function(c) {
+      return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
+    }) : candidates;
+    renderList(filtered);
+  });
+};
 
 window.selectCard = function(selectedCardId) {
   t.get('board', 'shared', 'relations').then(function(relations) {
     var map = relations || {};
-
-    if (mode === 'parent') {
-      // Current card becomes child of selectedCard
-      map[currentCardId] = selectedCardId;
+    if (selectedCardId === currentSelectionId) {
+      delete map[currentCardId];
+      currentSelectionId = '';
     } else {
-      // selectedCard becomes child of current card
-      map[selectedCardId] = currentCardId;
+      map[currentCardId] = selectedCardId;
+      currentSelectionId = selectedCardId;
     }
-
     return t.set('board', 'shared', 'relations', map);
   }).then(function() {
     t.closePopup();
@@ -57,11 +97,9 @@ window.selectCard = function(selectedCardId) {
 
 document.getElementById('search').addEventListener('input', function(e) {
   var q = e.target.value.toLowerCase();
-  var filtered = q
-    ? candidates.filter(function(c) {
-        return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
-      })
-    : candidates;
+  var filtered = q ? candidates.filter(function(c) {
+    return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
+  }) : candidates;
   renderList(filtered);
 });
 

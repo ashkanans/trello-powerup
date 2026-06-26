@@ -8,42 +8,143 @@
 <script>
 var POWERUP_ICON = 'https://cdn.jsdelivr.net/npm/heroicons@1.0.6/outline/link.svg';
 
+function getAncestors(cardId, relations) {
+  var ancestors = new Set();
+  var cur = relations[cardId];
+  while (cur && !ancestors.has(cur)) {
+    ancestors.add(cur);
+    cur = relations[cur];
+  }
+  return ancestors;
+}
+
+function getDescendants(cardId, relations) {
+  var descendants = new Set();
+  var queue = [cardId];
+  while (queue.length > 0) {
+    var current = queue.shift();
+    Object.keys(relations).forEach(function(childId) {
+      if (relations[childId] === current && !descendants.has(childId)) {
+        descendants.add(childId);
+        queue.push(childId);
+      }
+    });
+  }
+  return descendants;
+}
+
 TrelloPowerUp.initialize({
+
+  'card-buttons': function(t, options) {
+    return [
+      {
+        icon: POWERUP_ICON,
+        text: 'Add Parent',
+        callback: function(t) {
+          return Promise.all([
+            t.card('id'),
+            t.cards('id', 'name', 'idShort'),
+            t.get('board', 'shared', 'relations')
+          ]).then(function(results) {
+            var cardId = results[0].id;
+            var allCards = results[1];
+            var relations = results[2] || {};
+            var parentId = relations[cardId] || '';
+            var descendants = getDescendants(cardId, relations);
+
+            var candidates = allCards.filter(function(c) {
+              return c.id !== cardId && !descendants.has(c.id);
+            });
+
+            return t.popup({
+              title: 'Set Parent Card',
+              url: './card-picker.html',
+              args: {
+                mode: 'parent',
+                currentCardId: cardId,
+                currentSelectionId: parentId,
+                candidates: JSON.stringify(candidates.map(function(c) {
+                  return { id: c.id, name: c.name, idShort: c.idShort };
+                }))
+              },
+              height: 400
+            });
+          });
+        }
+      },
+      {
+        icon: POWERUP_ICON,
+        text: 'Add SubTasks',
+        callback: function(t) {
+          return Promise.all([
+            t.card('id'),
+            t.cards('id', 'name', 'idShort'),
+            t.get('board', 'shared', 'relations')
+          ]).then(function(results) {
+            var cardId = results[0].id;
+            var allCards = results[1];
+            var relations = results[2] || {};
+
+            var currentChildIds = Object.keys(relations).filter(function(k) {
+              return relations[k] === cardId;
+            });
+
+            var ancestors = getAncestors(cardId, relations);
+            var candidates = allCards.filter(function(c) {
+              return c.id !== cardId && !ancestors.has(c.id);
+            });
+
+            return t.popup({
+              title: 'Add SubTasks',
+              url: './card-picker.html',
+              args: {
+                mode: 'children',
+                currentCardId: cardId,
+                currentChildIds: JSON.stringify(currentChildIds),
+                candidates: JSON.stringify(candidates.map(function(c) {
+                  return { id: c.id, name: c.name, idShort: c.idShort };
+                }))
+              },
+              height: 420
+            });
+          });
+        }
+      }
+    ];
+  },
 
   'card-badges': function(t, options) {
     return Promise.all([
-      t.card('id', 'name'),
-      t.get('board', 'shared', 'relations')
+      t.card('id'),
+      t.get('board', 'shared', 'relations'),
+      t.get('board', 'shared', 'completions')
     ]).then(function(results) {
-      var card = results[0];
+      var cardId = results[0].id;
       var relations = results[1] || {};
+      var completions = results[2] || {};
       var badges = [];
 
-      var parentId = relations[card.id];
+      // Blue badge: this card is a subtask of something
+      var parentId = relations[cardId];
       if (parentId) {
         badges.push({
-          dynamic: function() {
-            return t.cards('id', 'name', 'idShort').then(function(allCards) {
-              var parent = allCards.find(function(c) { return c.id === parentId; });
-              return {
-                text: parent ? ('Child of #' + parent.idShort) : 'Child (parent missing)',
-                color: 'blue',
-                icon: POWERUP_ICON,
-                refresh: 60
-              };
-            });
-          }
+          icon: POWERUP_ICON,
+          text: '↑ subtask',
+          color: 'blue'
         });
       }
 
-      var childCount = Object.values(relations).filter(function(pid) {
-        return pid === card.id;
-      }).length;
-
-      if (childCount > 0) {
+      // Progress badge: this card has subtasks
+      var children = Object.keys(relations).filter(function(id) {
+        return relations[id] === cardId;
+      });
+      if (children.length > 0) {
+        var done = children.filter(function(id) { return !!completions[id]; }).length;
+        var total = children.length;
+        var pct = Math.round((done / total) * 100);
         badges.push({
-          text: childCount + (childCount === 1 ? ' child' : ' children'),
-          color: 'green',
+          text: pct + '% (' + done + '/' + total + ')',
+          color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
           icon: POWERUP_ICON
         });
       }
@@ -54,12 +155,12 @@ TrelloPowerUp.initialize({
 
   'card-back-section': function(t, options) {
     return {
-      title: 'Parent / Children',
+      title: 'SubTasks',
       icon: POWERUP_ICON,
       content: {
         type: 'iframe',
         url: t.signUrl('./card-back.html'),
-        height: 220
+        height: 80
       }
     };
   }
