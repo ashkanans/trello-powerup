@@ -12,6 +12,13 @@
 </div>
 
 <script>
+try {
+  var _ctx = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+  if (_ctx.context && _ctx.context.initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  }
+} catch(e) {}
+
 var t = TrelloPowerUp.iframe();
 
 var mode = t.arg('mode') || 'parent';

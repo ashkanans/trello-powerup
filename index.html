@@ -213,15 +213,29 @@ TrelloPowerUp.initialize({
   },
 
   'card-back-section': function(t, options) {
-    return {
-      title: 'SubTasks',
-      icon: POWERUP_ICON,
-      content: {
-        type: 'iframe',
-        url: t.signUrl('./card-back.html'),
-        height: 80
+    return Promise.all([
+      t.card('id'),
+      t.get('board', 'shared', 'relations')
+    ]).then(function(results) {
+      var cardId = results[0].id;
+      var relations = results[1] || {};
+      var hasParent = !!relations[cardId];
+      var hasChildren = Object.keys(relations).some(function(id) {
+        return relations[id] === cardId;
+      });
+      if (!hasParent && !hasChildren) {
+        return null;
       }
-    };
+      return {
+        title: 'SubTasks',
+        icon: POWERUP_ICON,
+        content: {
+          type: 'iframe',
+          url: t.signUrl('./card-back.html'),
+          height: 80
+        }
+      };
+    });
   }
 
 });

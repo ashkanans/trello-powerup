@@ -9,6 +9,14 @@
   <div id="app"><p class="loading">Loading…</p></div>
 
 <script>
+// Detect Trello theme from URL hash context
+try {
+  var _ctx = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+  if (_ctx.context && _ctx.context.initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  }
+} catch(e) {}
+
 var t = TrelloPowerUp.iframe();
 
 function getRelations() {
@@ -79,8 +87,6 @@ function render(currentCard, allCards, relations, completions) {
     });
     html += '</div>';
 
-  } else if (!parent) {
-    html += '<p class="empty-hint">Use the <strong>Add Parent</strong> and <strong>Add SubTasks</strong> buttons above to link cards.</p>';
   }
 
   document.getElementById('app').innerHTML = html;
