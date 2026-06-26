@@ -29,6 +29,10 @@ function getCompletions() {
   return t.get('board', 'shared', 'completions').then(function(c) { return c || {}; });
 }
 
+function getOrigins() {
+  return t.get('board', 'shared', 'origins').then(function(o) { return o || {}; });
+}
+
 function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -86,13 +90,7 @@ function render(currentCard, allCards, relations, completions, lists) {
     html += '<div class="checklist">';
     myChildren.forEach(function(child) {
       var checked = isDone(child.id);
-      // Cards done by list membership can't be toggled via checkbox (must drag back)
-      var byList = isDoneByList(child.id);
-      html += '<div class="checklist-item' + (byList ? ' list-done' : '') + '"';
-      if (!byList) {
-        html += ' onclick="toggleChild(\'' + child.id + '\')"';
-      }
-      html += '>';
+      html += '<div class="checklist-item" onclick="toggleChild(\'' + child.id + '\')">';
       html += '<div class="checkbox' + (checked ? ' checked' : '') + '">';
       if (checked) {
         html += '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">';
@@ -134,20 +132,31 @@ function load() {
   });
 }
 
+function moveCard(childId, targetListId) {
+  return t.getRestApi({ scope: 'write' }).then(function(api) {
+    return api.put('/1/cards/' + childId, { idList: targetListId });
+  });
+}
+
 window.toggleChild = function(childId) {
   var s = window._state;
   if (!s) return;
 
-  var alreadyDone = !!s.completions[childId];
+  var byList = !!(s.cardMap[childId] && s.doneListIds.has(s.cardMap[childId].idList));
+  var byCompletion = !!s.completions[childId];
+  var alreadyDone = byList || byCompletion;
 
   if (!alreadyDone) {
-    // Mark done: move card to done list via REST API, fall back to completions store
+    // Mark done: save origin list, then move card to done list
+    var originListId = s.cardMap[childId] && s.cardMap[childId].idList;
     if (s.doneListId) {
-      t.getRestApi({ scope: 'write' }).then(function(api) {
-        return api.put('/1/cards/' + childId, { idList: s.doneListId });
+      getOrigins().then(function(origins) {
+        if (originListId) origins[childId] = originListId;
+        return t.set('board', 'shared', 'origins', origins);
       }).then(function() {
-        load();
-      }).catch(function() {
+        return moveCard(childId, s.doneListId);
+      }).then(load).catch(function() {
+        // REST failed — fall back to completions store
         return getCompletions().then(function(c) {
           c[childId] = true;
           return t.set('board', 'shared', 'completions', c);
@@ -159,8 +168,18 @@ window.toggleChild = function(childId) {
         return t.set('board', 'shared', 'completions', c);
       }).then(load);
     }
+  } else if (byList) {
+    // Unmark done-by-list: move card back to its origin list
+    getOrigins().then(function(origins) {
+      var originListId = origins[childId];
+      if (!originListId) return load(); // no origin saved — nothing to do
+      return moveCard(childId, originListId).then(function() {
+        delete origins[childId];
+        return t.set('board', 'shared', 'origins', origins);
+      }).then(load);
+    });
   } else {
-    // Unmark done: clear from completions store
+    // Unmark done-by-completion: clear from completions store
     getCompletions().then(function(c) {
       delete c[childId];
       return t.set('board', 'shared', 'completions', c);
