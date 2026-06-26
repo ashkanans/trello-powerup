@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<script>
+var POWERUP_ICON = 'https://cdn.jsdelivr.net/npm/heroicons@1.0.6/outline/link.svg';
+
+TrelloPowerUp.initialize({
+
+  'card-badges': function(t, options) {
+    return Promise.all([
+      t.card('id', 'name'),
+      t.get('board', 'shared', 'relations')
+    ]).then(function(results) {
+      var card = results[0];
+      var relations = results[1] || {};
+      var badges = [];
+
+      var parentId = relations[card.id];
+      if (parentId) {
+        badges.push({
+          dynamic: function() {
+            return t.cards('id', 'name', 'idShort').then(function(allCards) {
+              var parent = allCards.find(function(c) { return c.id === parentId; });
+              return {
+                text: parent ? ('Child of #' + parent.idShort) : 'Child (parent missing)',
+                color: 'blue',
+                icon: POWERUP_ICON,
+                refresh: 60
+              };
+            });
+          }
+        });
+      }
+
+      var childCount = Object.values(relations).filter(function(pid) {
+        return pid === card.id;
+      }).length;
+
+      if (childCount > 0) {
+        badges.push({
+          text: childCount + (childCount === 1 ? ' child' : ' children'),
+          color: 'green',
+          icon: POWERUP_ICON
+        });
+      }
+
+      return badges;
+    });
+  },
+
+  'card-back-section': function(t, options) {
+    return {
+      title: 'Parent / Children',
+      icon: POWERUP_ICON,
+      content: {
+        type: 'iframe',
+        url: t.signUrl('./card-back.html'),
+        height: 220
+      }
+    };
+  }
+
+}, {
+  appName: 'Parent-Child Relations'
+});
+</script>
+</body>
+</html>

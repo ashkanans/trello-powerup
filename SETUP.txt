@@ -1,0 +1,40 @@
+SETUP INSTRUCTIONS
+==================
+
+1. HOST THE FILES
+   The Power-Up must be served over HTTPS.
+   Easiest options:
+     a) GitHub Pages  — push the trello-powerup/ folder to a repo, enable Pages
+     b) Netlify / Vercel — drag the folder into their web UI, instant HTTPS
+     c) ngrok (local dev) — run: npx serve . then ngrok http 3000
+
+2. REGISTER THE POWER-UP
+   a) Go to https://trello.com/power-ups/admin
+   b) Click "Create new Power-Up"
+   c) Fill in:
+        Name: Parent-Child Relations
+        Workspace: (your workspace)
+        Iframe connector URL: https://YOUR-HOST/index.html
+   d) Under Capabilities, enable:
+        - card-badges
+        - card-back-section
+   e) Save.
+
+3. ADD TO A BOARD
+   a) Open any Trello board
+   b) Click Power-Ups (puzzle icon) → search "Parent-Child Relations"
+   c) Click Add
+
+4. USE IT
+   Open any card. The "Parent / Children" section appears in the card back.
+   - Click "Set parent" to pick a parent card from the board.
+   - Click "Add child card" to assign a child.
+   - The × button removes a relationship.
+   - Card fronts show blue "Child of #N" and green "N children" badges.
+
+NOTES
+=====
+- Relationships are stored in board-level Power-Up data (no OAuth needed).
+- Circular relationships (A→B→A) are prevented automatically.
+- Data persists as long as the Power-Up is enabled on the board.
+- The board-level 'relations' key has a 4 KB JSON limit, enough for ~200 cards.

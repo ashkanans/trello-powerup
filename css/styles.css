@@ -1,0 +1,165 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: #172b4d;
+  background: #fff;
+  padding: 8px 12px;
+}
+
+.section {
+  margin-bottom: 12px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #5e6c84;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f4f5f7;
+  border: 1px solid #dfe1e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.card-chip .chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.card-chip .chip-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #97a0af;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.card-chip .chip-remove:hover {
+  color: #eb5a46;
+}
+
+.children-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btn-primary {
+  background: #0052cc;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #0065ff;
+}
+
+.btn-ghost {
+  background: #f4f5f7;
+  color: #172b4d;
+  border: 1px solid #dfe1e6;
+}
+
+.btn-ghost:hover {
+  background: #ebecf0;
+}
+
+.empty-state {
+  color: #97a0af;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.loading {
+  color: #97a0af;
+  font-size: 12px;
+}
+
+/* Picker popup styles */
+.picker-container {
+  padding: 8px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 2px solid #0052cc;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 8px;
+}
+
+.picker-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.picker-item:hover {
+  background: #f4f5f7;
+}
+
+.picker-item .item-id {
+  font-size: 11px;
+  color: #97a0af;
+  flex-shrink: 0;
+}
+
+.picker-item .item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-empty {
+  padding: 12px 8px;
+  color: #97a0af;
+  text-align: center;
+  font-size: 12px;
+}

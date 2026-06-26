@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="./css/styles.css">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<div class="picker-container">
+  <input class="search-input" id="search" type="text" placeholder="Search cards…" autofocus>
+  <div class="picker-list" id="list"></div>
+</div>
+
+<script>
+var t = TrelloPowerUp.iframe();
+
+var args = t.arg('args') || {};
+var mode = args.mode || 'parent';
+var currentCardId = args.currentCardId || '';
+var candidates = [];
+try { candidates = JSON.parse(args.candidates || '[]'); } catch(e) {}
+
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderList(items) {
+  var list = document.getElementById('list');
+  if (items.length === 0) {
+    list.innerHTML = '<div class="picker-empty">No cards found</div>';
+    return;
+  }
+  list.innerHTML = items.map(function(card) {
+    return '<div class="picker-item" onclick="selectCard(\'' + card.id + '\')">' +
+      '<span class="item-id">#' + card.idShort + '</span>' +
+      '<span class="item-name">' + escHtml(card.name) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+window.selectCard = function(selectedCardId) {
+  t.get('board', 'shared', 'relations').then(function(relations) {
+    var map = relations || {};
+
+    if (mode === 'parent') {
+      // Current card becomes child of selectedCard
+      map[currentCardId] = selectedCardId;
+    } else {
+      // selectedCard becomes child of current card
+      map[selectedCardId] = currentCardId;
+    }
+
+    return t.set('board', 'shared', 'relations', map);
+  }).then(function() {
+    t.closePopup();
+  });
+};
+
+document.getElementById('search').addEventListener('input', function(e) {
+  var q = e.target.value.toLowerCase();
+  var filtered = q
+    ? candidates.filter(function(c) {
+        return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
+      })
+    : candidates;
+  renderList(filtered);
+});
+
+renderList(candidates);
+t.sizeTo('.picker-container').catch(function() {});
+</script>
+</body>
+</html>
