@@ -101,7 +101,7 @@ function render(currentCard, allCards, relations, completions, lists) {
       html += '<span class="checklist-label' + (checked ? ' done' : '') + '">';
       html += '#' + child.idShort + ' ' + escHtml(child.name);
       html += '</span>';
-      html += '<button class="remove-child-btn" onclick="event.stopPropagation();removeChild(\'' + child.id + '\')" title="Remove subtask">×</button>';
+      html += '<button class="remove-child-btn" onclick="event.stopPropagation();removeSubtask(\'' + child.id + '\')" title="Remove subtask">×</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -195,7 +195,7 @@ window.removeParent = function() {
   }).then(load);
 };
 
-window.removeChild = function(childId) {
+window.removeSubtask = function(childId) {
   getRelations().then(function(relations) {
     delete relations[childId];
     return t.set('board', 'shared', 'relations', relations);
