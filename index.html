@@ -153,6 +153,44 @@ TrelloPowerUp.initialize({
     });
   },
 
+  'card-detail-badges': function(t, options) {
+    return Promise.all([
+      t.card('id'),
+      t.get('board', 'shared', 'relations'),
+      t.get('board', 'shared', 'completions')
+    ]).then(function(results) {
+      var cardId = results[0].id;
+      var relations = results[1] || {};
+      var completions = results[2] || {};
+      var badges = [];
+
+      var parentId = relations[cardId];
+      if (parentId) {
+        badges.push({
+          icon: POWERUP_ICON,
+          text: '↑ subtask',
+          color: 'blue'
+        });
+      }
+
+      var children = Object.keys(relations).filter(function(id) {
+        return relations[id] === cardId;
+      });
+      if (children.length > 0) {
+        var done = children.filter(function(id) { return !!completions[id]; }).length;
+        var total = children.length;
+        var pct = Math.round((done / total) * 100);
+        badges.push({
+          text: pct + '% (' + done + '/' + total + ')',
+          color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
+          icon: POWERUP_ICON
+        });
+      }
+
+      return badges;
+    });
+  },
+
   'card-back-section': function(t, options) {
     return {
       title: 'SubTasks',
@@ -166,6 +204,7 @@ TrelloPowerUp.initialize({
   }
 
 }, {
+  appKey: 'YOUR_TRELLO_API_KEY',
   appName: 'Parent-Child Relations'
 });
 </script>
