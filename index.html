@@ -2,10 +2,18 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>🔗</text></svg>">
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
 <script>
+// When opened directly in a browser (not inside Trello's iframe), show a
+// friendly message instead of letting the SDK throw postMessage errors.
+if (window.self === window.top) {
+  document.body.style.cssText = 'font-family:sans-serif;padding:40px;color:#172b4d';
+  document.body.innerHTML = '<h2>Parent-Child Relations</h2><p style="margin-top:8px;color:#5e6c84">This is a Trello Power-Up connector. It only works when loaded inside Trello.</p>';
+} else {
+
 var POWERUP_ICON = 'https://cdn.jsdelivr.net/npm/heroicons@1.0.6/outline/link.svg';
 
 function getAncestors(cardId, relations) {
@@ -214,9 +222,9 @@ TrelloPowerUp.initialize({
     };
   }
 
-}, {
-  appName: 'Parent-Child Relations'
 });
+
+} // end iframe-only guard
 </script>
 </body>
 </html>
