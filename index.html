@@ -36,16 +36,19 @@ function getDescendants(cardId, relations) {
 TrelloPowerUp.initialize({
 
   'card-buttons': function(t, options) {
+    console.log('[PCR] card-buttons capability called');
     return [
       {
         icon: POWERUP_ICON,
         text: 'Add Parent',
         callback: function(t) {
+          console.log('[PCR] Add Parent button clicked');
           return Promise.all([
             t.card('id'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
+            console.log('[PCR] Add Parent data loaded', results[0]);
             var cardId = results[0].id;
             var allCards = results[1];
             var relations = results[2] || {};
@@ -55,6 +58,7 @@ TrelloPowerUp.initialize({
             var candidates = allCards.filter(function(c) {
               return c.id !== cardId && !descendants.has(c.id);
             });
+            console.log('[PCR] Add Parent candidates:', candidates.length);
 
             return t.popup({
               title: 'Set Parent Card',
@@ -69,6 +73,8 @@ TrelloPowerUp.initialize({
               },
               height: 400
             });
+          }).catch(function(err) {
+            console.error('[PCR] Add Parent error:', err);
           });
         }
       },
@@ -76,11 +82,13 @@ TrelloPowerUp.initialize({
         icon: POWERUP_ICON,
         text: 'Add SubTasks',
         callback: function(t) {
+          console.log('[PCR] Add SubTasks button clicked');
           return Promise.all([
             t.card('id'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
+            console.log('[PCR] Add SubTasks data loaded', results[0]);
             var cardId = results[0].id;
             var allCards = results[1];
             var relations = results[2] || {};
@@ -93,6 +101,7 @@ TrelloPowerUp.initialize({
             var candidates = allCards.filter(function(c) {
               return c.id !== cardId && !ancestors.has(c.id);
             });
+            console.log('[PCR] Add SubTasks candidates:', candidates.length);
 
             return t.popup({
               title: 'Add SubTasks',
@@ -107,6 +116,8 @@ TrelloPowerUp.initialize({
               },
               height: 420
             });
+          }).catch(function(err) {
+            console.error('[PCR] Add SubTasks error:', err);
           });
         }
       }
