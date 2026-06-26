@@ -150,6 +150,15 @@ body {
   background: var(--hover-bg);
 }
 
+/* Done by list membership — checkbox reflects state but can't be toggled */
+.checklist-item.list-done {
+  cursor: default;
+}
+
+.checklist-item.list-done:hover {
+  background: transparent;
+}
+
 .checkbox {
   width: 16px;
   height: 16px;

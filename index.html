@@ -138,12 +138,24 @@ TrelloPowerUp.initialize({
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
-      t.get('board', 'shared', 'completions')
+      t.get('board', 'shared', 'completions'),
+      t.lists('id', 'name'),
+      t.cards('id', 'idList')
     ]).then(function(results) {
       var cardId = results[0].id;
       var relations = results[1] || {};
       var completions = results[2] || {};
+      var lists = results[3] || [];
+      var allCards = results[4] || [];
       var badges = [];
+
+      var donePat = /✅|done|completato|fatto|complete/i;
+      var doneListIds = new Set(
+        lists.filter(function(l) { return donePat.test(l.name); }).map(function(l) { return l.id; })
+      );
+      var cardListMap = {};
+      allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
+      function isDone(id) { return !!completions[id] || doneListIds.has(cardListMap[id]); }
 
       // Blue badge: this card is a subtask of something
       var parentId = relations[cardId];
@@ -160,7 +172,7 @@ TrelloPowerUp.initialize({
         return relations[id] === cardId;
       });
       if (children.length > 0) {
-        var done = children.filter(function(id) { return !!completions[id]; }).length;
+        var done = children.filter(isDone).length;
         var total = children.length;
         var pct = Math.round((done / total) * 100);
         badges.push({
@@ -179,12 +191,24 @@ TrelloPowerUp.initialize({
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
-      t.get('board', 'shared', 'completions')
+      t.get('board', 'shared', 'completions'),
+      t.lists('id', 'name'),
+      t.cards('id', 'idList')
     ]).then(function(results) {
       var cardId = results[0].id;
       var relations = results[1] || {};
       var completions = results[2] || {};
+      var lists = results[3] || [];
+      var allCards = results[4] || [];
       var badges = [];
+
+      var donePat = /✅|done|completato|fatto|complete/i;
+      var doneListIds = new Set(
+        lists.filter(function(l) { return donePat.test(l.name); }).map(function(l) { return l.id; })
+      );
+      var cardListMap = {};
+      allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
+      function isDone(id) { return !!completions[id] || doneListIds.has(cardListMap[id]); }
 
       var parentId = relations[cardId];
       if (parentId) {
@@ -199,7 +223,7 @@ TrelloPowerUp.initialize({
         return relations[id] === cardId;
       });
       if (children.length > 0) {
-        var done = children.filter(function(id) { return !!completions[id]; }).length;
+        var done = children.filter(isDone).length;
         var total = children.length;
         var pct = Math.round((done / total) * 100);
         badges.push({

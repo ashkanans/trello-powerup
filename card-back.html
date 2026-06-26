@@ -19,6 +19,8 @@ try {
 
 var t = TrelloPowerUp.iframe();
 
+var DONE_PAT = /✅|done|completato|fatto|complete/i;
+
 function getRelations() {
   return t.get('board', 'shared', 'relations').then(function(r) { return r || {}; });
 }
@@ -31,9 +33,22 @@ function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function render(currentCard, allCards, relations, completions) {
+function render(currentCard, allCards, relations, completions, lists) {
   var cardMap = {};
   allCards.forEach(function(c) { cardMap[c.id] = c; });
+
+  var doneListIds = new Set(
+    lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
+  );
+  var doneList = lists.find(function(l) { return DONE_PAT.test(l.name); });
+
+  function isDoneByList(id) {
+    var card = cardMap[id];
+    return !!(card && doneListIds.has(card.idList));
+  }
+  function isDone(id) {
+    return !!completions[id] || isDoneByList(id);
+  }
 
   var parentId = relations[currentCard.id] || null;
   var parent = parentId ? cardMap[parentId] : null;
@@ -56,9 +71,9 @@ function render(currentCard, allCards, relations, completions) {
 
   // Subtasks section
   if (myChildren.length > 0) {
-    var done = myChildren.filter(function(c) { return !!completions[c.id]; }).length;
+    var doneCount = myChildren.filter(function(c) { return isDone(c.id); }).length;
     var total = myChildren.length;
-    var pct = Math.round((done / total) * 100);
+    var pct = Math.round((doneCount / total) * 100);
 
     html += '<div class="progress-header">';
     html += '<span class="progress-text">' + pct + '% complete</span>';
@@ -70,8 +85,14 @@ function render(currentCard, allCards, relations, completions) {
 
     html += '<div class="checklist">';
     myChildren.forEach(function(child) {
-      var checked = !!completions[child.id];
-      html += '<div class="checklist-item" onclick="toggleChild(\'' + child.id + '\')">';
+      var checked = isDone(child.id);
+      // Cards done by list membership can't be toggled via checkbox (must drag back)
+      var byList = isDoneByList(child.id);
+      html += '<div class="checklist-item' + (byList ? ' list-done' : '') + '"';
+      if (!byList) {
+        html += ' onclick="toggleChild(\'' + child.id + '\')"';
+      }
+      html += '>';
       html += '<div class="checkbox' + (checked ? ' checked' : '') + '">';
       if (checked) {
         html += '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">';
@@ -86,35 +107,65 @@ function render(currentCard, allCards, relations, completions) {
       html += '</div>';
     });
     html += '</div>';
-
   }
 
   document.getElementById('app').innerHTML = html;
   t.sizeTo('#app').catch(function() {});
 
-  window._state = { currentCard: currentCard, relations: relations, completions: completions };
+  window._state = {
+    currentCard: currentCard,
+    relations: relations,
+    completions: completions,
+    cardMap: cardMap,
+    doneListIds: doneListIds,
+    doneListId: doneList ? doneList.id : null
+  };
 }
 
 function load() {
   Promise.all([
     t.card('id', 'idShort', 'name'),
-    t.cards('id', 'name', 'idShort'),
+    t.cards('id', 'name', 'idShort', 'idList'),
     getRelations(),
-    getCompletions()
+    getCompletions(),
+    t.lists('id', 'name')
   ]).then(function(results) {
-    render(results[0], results[1], results[2], results[3]);
+    render(results[0], results[1], results[2], results[3], results[4]);
   });
 }
 
 window.toggleChild = function(childId) {
-  getCompletions().then(function(completions) {
-    if (completions[childId]) {
-      delete completions[childId];
+  var s = window._state;
+  if (!s) return;
+
+  var alreadyDone = !!s.completions[childId];
+
+  if (!alreadyDone) {
+    // Mark done: move card to done list via REST API, fall back to completions store
+    if (s.doneListId) {
+      t.getRestApi().then(function(api) {
+        return api.put('/1/cards/' + childId, { idList: s.doneListId });
+      }).then(function() {
+        load();
+      }).catch(function() {
+        return getCompletions().then(function(c) {
+          c[childId] = true;
+          return t.set('board', 'shared', 'completions', c);
+        }).then(load);
+      });
     } else {
-      completions[childId] = true;
+      getCompletions().then(function(c) {
+        c[childId] = true;
+        return t.set('board', 'shared', 'completions', c);
+      }).then(load);
     }
-    return t.set('board', 'shared', 'completions', completions);
-  }).then(load);
+  } else {
+    // Unmark done: clear from completions store
+    getCompletions().then(function(c) {
+      delete c[childId];
+      return t.set('board', 'shared', 'completions', c);
+    }).then(load);
+  }
 };
 
 window.removeParent = function() {
