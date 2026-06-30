@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>🔗</text></svg>">
+  <script src="./config.js"></script>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
@@ -294,6 +295,9 @@ TrelloPowerUp.initialize({
     });
   }
 
+}, {
+  appKey: TRELLO_APP_KEY,
+  appName: 'Parent-Child Relations'
 });
 
 } // end iframe-only guard

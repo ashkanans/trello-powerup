@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="./css/styles.css">
+  <script src="./config.js"></script>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
@@ -19,7 +20,7 @@ try {
   }
 } catch(e) {}
 
-var t = TrelloPowerUp.iframe();
+var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
 
 var mode = t.arg('mode') || 'parent';
 var currentCardId = t.arg('currentCardId') || '';
