@@ -300,9 +300,10 @@ TrelloPowerUp.initialize({
       text: 'Show Hierarchy',
       callback: function(t) {
         return t.list('id', 'name').then(function(list) {
-          return t.overlay({
+          return t.modal({
             url: './hierarchy.html',
-            args: { listId: list.id, listName: list.name }
+            args: { listId: list.id, listName: list.name },
+            fullscreen: true
           });
         });
       }

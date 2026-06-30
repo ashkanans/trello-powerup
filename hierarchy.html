@@ -46,7 +46,7 @@ var listName = t.arg('listName') || '';
 
 document.getElementById('list-title').textContent = listName ? 'Hierarchy — ' + listName : 'Hierarchy';
 
-window._close = function() { t.closePopup(); };
+window._close = function() { t.closeModal(); };
 
 window._openCard = function(shortLink) {
   t.navigate({ url: 'https://trello.com/c/' + shortLink });
