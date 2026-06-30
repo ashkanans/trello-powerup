@@ -206,7 +206,7 @@ function showError(msg) {
 
 window.toggleChild = function(childId) {
   var s = window._state;
-  if (!s) { // console.warn('[PCR toggleChild] _state is null'); return; }
+  if (!s) return;
 
   var card = s.cardMap[childId];
   var byList       = !!(card && s.doneListIds.has(card.idList));
