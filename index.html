@@ -293,6 +293,22 @@ TrelloPowerUp.initialize({
         }
       };
     });
+  },
+
+  'list-actions': function(t, options) {
+    return [{
+      text: 'Show Hierarchy',
+      callback: function(t) {
+        return t.list('id', 'name').then(function(list) {
+          return t.popup({
+            title: 'Hierarchy — ' + list.name,
+            url: './hierarchy.html',
+            args: { listId: list.id },
+            height: 500
+          });
+        });
+      }
+    }];
   }
 
 }, {
