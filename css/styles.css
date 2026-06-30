@@ -410,3 +410,37 @@ body {
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* ── Hierarchy overlay header ───────────────────── */
+
+.hierarchy-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.hierarchy-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hierarchy-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.1s, color 0.1s;
+}
+
+.hierarchy-close:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}

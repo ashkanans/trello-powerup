@@ -3,11 +3,34 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="./css/styles.css">
+  <style>
+    body {
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #app {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 16px 16px;
+    }
+    .tree-root {
+      max-height: none;
+      padding: 0;
+    }
+  </style>
   <script src="./config.js"></script>
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
-<div id="app"><p class="loading">Loading…</p></div>
+<div class="hierarchy-header">
+  <span class="hierarchy-title" id="list-title">Hierarchy</span>
+  <button class="hierarchy-close" onclick="window._close()" title="Close">✕</button>
+</div>
+<div id="app"><p class="loading" style="padding:12px">Loading…</p></div>
 
 <script>
 try {
@@ -18,30 +41,37 @@ try {
 } catch(e) {}
 
 var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
-var listId = t.arg('listId');
+var listId   = t.arg('listId');
+var listName = t.arg('listName') || '';
 
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+document.getElementById('list-title').textContent = listName ? 'Hierarchy — ' + listName : 'Hierarchy';
+
+window._close = function() { t.closePopup(); };
 
 window._openCard = function(shortLink) {
   t.navigate({ url: 'https://trello.com/c/' + shortLink });
 };
 
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function renderSubtree(card, cardMap, relations, listNameMap, isChild) {
   var children = Object.keys(relations)
     .filter(function(id) { return relations[id] === card.id; })
     .map(function(id) { return cardMap[id]; })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort(function(a, b) { return a.idShort - b.idShort; });
 
   var clickAttr = card.shortLink
     ? ' onclick="window._openCard(\'' + card.shortLink + '\')" title="Open card"'
     : '';
-  var cardClass = 'tree-card' + (isChild ? ' is-child' : '') + (card.shortLink ? ' is-clickable' : '');
+  var cardClass = 'tree-card'
+    + (isChild ? ' is-child' : '')
+    + (card.shortLink ? ' is-clickable' : '');
 
   var html = '<div class="tree-node">';
   html += '<div class="' + cardClass + '"' + clickAttr + '>';
-  html += '<span class="card-num">#' + card.idShort + '</span>';
   html += '<span class="card-title">' + escHtml(card.name) + '</span>';
 
   if (card.idList !== listId) {
@@ -53,6 +83,7 @@ function renderSubtree(card, cardMap, relations, listNameMap, isChild) {
       + '<path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
       + '</svg>';
   }
+
   html += '</div>';
 
   if (children.length > 0) {
@@ -81,11 +112,13 @@ function render(listCards, allCards, relations, listNameMap) {
     }
   });
 
-  var roots = listCards.filter(function(c) { return !childrenInList.has(c.id); });
+  var roots = listCards
+    .filter(function(c) { return !childrenInList.has(c.id); })
+    .sort(function(a, b) { return a.idShort - b.idShort; });
 
   var html = '<div class="tree-root">';
   if (roots.length === 0) {
-    html += '<p class="empty-hint" style="padding:12px 8px">No cards found in this list.</p>';
+    html += '<p class="empty-hint" style="padding:12px 0">No cards found in this list.</p>';
   } else {
     roots.forEach(function(card) {
       html += renderSubtree(card, cardMap, relations, listNameMap, false);
@@ -94,7 +127,6 @@ function render(listCards, allCards, relations, listNameMap) {
   html += '</div>';
 
   document.getElementById('app').innerHTML = html;
-  t.sizeTo('#app').catch(function() {});
 }
 
 Promise.all([
