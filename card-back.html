@@ -69,8 +69,9 @@ function render(currentCard, allCards, relations, completions, lists) {
   var doneLists = lists.filter(function(l) { return DONE_PAT.test(l.name); });
   var doneListIds = new Set(doneLists.map(function(l) { return l.id; }));
 
-  // Prefer the list named exactly "Fatto"; fall back to the first matching done list.
-  var doneList = doneLists.find(function(l) { return l.name.toLowerCase() === 'fatto'; })
+  // Prefer a list whose name contains "fatto" (handles emoji prefixes like "✅ Fatto").
+  // Fall back to the first done-list match so boards without "Fatto" still work.
+  var doneList = doneLists.find(function(l) { return /fatto/i.test(l.name); })
     || doneLists[0]
     || null;
 

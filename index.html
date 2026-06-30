@@ -42,6 +42,46 @@ function getDescendants(cardId, relations) {
   return descendants;
 }
 
+// Cached REST API handle, shared across all capability invocations in this connector.
+var _api = null;
+// Short-lived card-list cache so many badges on one board share a single REST call.
+var _cardCache = { data: null, ts: 0, boardId: null };
+var CACHE_TTL = 4000; // ms — cards are fetched at most once every 4 s per board
+
+// Returns the REST API only when a token is already stored (no auth popup).
+// Returns null if the user has not yet authorised.
+function getStoredApi(t) {
+  if (_api) return Promise.resolve(_api);
+  return t.get('member', 'private', 'token').then(function(token) {
+    if (!token) return null;
+    return t.getRestApi({ scope: 'write' }).then(function(api) {
+      _api = api; return api;
+    }).catch(function() { return null; });
+  }).catch(function() { return null; });
+}
+
+// Returns fresh card data via REST API when a token is available, otherwise
+// falls back to t.cards() (SDK-cached). Results are shared for CACHE_TTL ms
+// so all badge calls on the same board only trigger one REST round-trip.
+function getFreshCards(t, boardId, api) {
+  var now = Date.now();
+  if (api && _cardCache.boardId === boardId && (now - _cardCache.ts) < CACHE_TTL) {
+    return Promise.resolve(_cardCache.data);
+  }
+  if (api) {
+    return api.get('/1/boards/' + boardId + '/cards', { fields: 'id,idList' })
+      .then(function(cards) {
+        _cardCache = { data: cards, ts: Date.now(), boardId: boardId };
+        return cards;
+      })
+      .catch(function(err) {
+        if (err && (err.status === 401 || err.status === 403)) _api = null;
+        return t.cards('id', 'idList');
+      });
+  }
+  return t.cards('id', 'idList');
+}
+
 function buildBadges(cardId, relations, completions, lists, allCards) {
   var doneListIds = new Set(
     lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
@@ -181,23 +221,23 @@ TrelloPowerUp.initialize({
   },
 
   'card-badges': function(t, options) {
-    console.log('[PCR card-badges] called at', new Date().toISOString());
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
       t.get('board', 'shared', 'completions'),
       t.lists('id', 'name'),
-      t.cards('id', 'idList')
+      t.board('id'),
+      getStoredApi(t)
     ]).then(function(results) {
-      var cardId = results[0].id;
-      var relations = results[1] || {};
+      var cardId      = results[0].id;
+      var relations   = results[1] || {};
       var completions = results[2] || {};
-      var lists = results[3] || [];
-      var allCards = results[4] || [];
-      console.log('[PCR card-badges] data loaded for cardId=' + cardId + ' lists=' + lists.length + ' cards=' + allCards.length);
-      var badges = buildBadges(cardId, relations, completions, lists, allCards);
-      console.log('[PCR card-badges] returning badges:', badges.map(function(b){ return b.text; }));
-      return badges;
+      var lists       = results[3] || [];
+      var boardId     = results[4].id;
+      var api         = results[5];
+      return getFreshCards(t, boardId, api).then(function(allCards) {
+        return buildBadges(cardId, relations, completions, lists, allCards);
+      });
     }).catch(function(err) {
       console.error('[PCR card-badges] ERROR:', err);
       return [];
@@ -205,23 +245,23 @@ TrelloPowerUp.initialize({
   },
 
   'card-detail-badges': function(t, options) {
-    console.log('[PCR card-detail-badges] called at', new Date().toISOString());
     return Promise.all([
       t.card('id'),
       t.get('board', 'shared', 'relations'),
       t.get('board', 'shared', 'completions'),
       t.lists('id', 'name'),
-      t.cards('id', 'idList')
+      t.board('id'),
+      getStoredApi(t)
     ]).then(function(results) {
-      var cardId = results[0].id;
-      var relations = results[1] || {};
+      var cardId      = results[0].id;
+      var relations   = results[1] || {};
       var completions = results[2] || {};
-      var lists = results[3] || [];
-      var allCards = results[4] || [];
-      console.log('[PCR card-detail-badges] data loaded for cardId=' + cardId + ' lists=' + lists.length + ' cards=' + allCards.length);
-      var badges = buildBadges(cardId, relations, completions, lists, allCards);
-      console.log('[PCR card-detail-badges] returning badges:', badges.map(function(b){ return b.text; }));
-      return badges;
+      var lists       = results[3] || [];
+      var boardId     = results[4].id;
+      var api         = results[5];
+      return getFreshCards(t, boardId, api).then(function(allCards) {
+        return buildBadges(cardId, relations, completions, lists, allCards);
+      });
     }).catch(function(err) {
       console.error('[PCR card-detail-badges] ERROR:', err);
       return [];
