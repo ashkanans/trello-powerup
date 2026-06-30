@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="./css/styles.css">
+  <script src="./config.js"></script>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<div id="app"><p class="loading">Loading…</p></div>
+
+<script>
+try {
+  var _ctx = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
+  if (_ctx.context && _ctx.context.initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  }
+} catch(e) {}
+
+var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
+var listId = t.arg('listId');
+
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+window._openCard = function(shortLink) {
+  t.navigate({ url: 'https://trello.com/c/' + shortLink });
+};
+
+function renderSubtree(card, cardMap, relations, listNameMap, isChild) {
+  var children = Object.keys(relations)
+    .filter(function(id) { return relations[id] === card.id; })
+    .map(function(id) { return cardMap[id]; })
+    .filter(Boolean);
+
+  var clickAttr = card.shortLink
+    ? ' onclick="window._openCard(\'' + card.shortLink + '\')" title="Open card"'
+    : '';
+  var cardClass = 'tree-card' + (isChild ? ' is-child' : '') + (card.shortLink ? ' is-clickable' : '');
+
+  var html = '<div class="tree-node">';
+  html += '<div class="' + cardClass + '"' + clickAttr + '>';
+  html += '<span class="card-num">#' + card.idShort + '</span>';
+  html += '<span class="card-title">' + escHtml(card.name) + '</span>';
+
+  if (card.idList !== listId) {
+    html += '<span class="tree-list-badge">' + escHtml(listNameMap[card.idList] || '?') + '</span>';
+  }
+
+  if (card.shortLink) {
+    html += '<svg class="card-arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">'
+      + '<path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '</svg>';
+  }
+  html += '</div>';
+
+  if (children.length > 0) {
+    html += '<div class="tree-children">';
+    children.forEach(function(child) {
+      html += renderSubtree(child, cardMap, relations, listNameMap, true);
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function render(listCards, allCards, relations, listNameMap) {
+  var cardMap = {};
+  allCards.forEach(function(c) { cardMap[c.id] = c; });
+
+  var listCardIds = new Set(listCards.map(function(c) { return c.id; }));
+
+  var childrenInList = new Set();
+  listCards.forEach(function(c) {
+    var parentId = relations[c.id];
+    if (parentId && listCardIds.has(parentId)) {
+      childrenInList.add(c.id);
+    }
+  });
+
+  var roots = listCards.filter(function(c) { return !childrenInList.has(c.id); });
+
+  var html = '<div class="tree-root">';
+  if (roots.length === 0) {
+    html += '<p class="empty-hint" style="padding:12px 8px">No cards found in this list.</p>';
+  } else {
+    roots.forEach(function(card) {
+      html += renderSubtree(card, cardMap, relations, listNameMap, false);
+    });
+  }
+  html += '</div>';
+
+  document.getElementById('app').innerHTML = html;
+  t.sizeTo('#app').catch(function() {});
+}
+
+Promise.all([
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink'),
+  t.get('board', 'shared', 'relations'),
+  t.lists('id', 'name')
+]).then(function(results) {
+  var allCards  = results[0];
+  var relations = results[1] || {};
+  var lists     = results[2];
+
+  var listNameMap = {};
+  lists.forEach(function(l) { listNameMap[l.id] = l.name; });
+
+  var listCards = allCards.filter(function(c) { return c.idList === listId; });
+
+  render(listCards, allCards, relations, listNameMap);
+}).catch(function(err) {
+  console.error('[PCR hierarchy] ERROR:', err);
+  document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy.</p>';
+});
+</script>
+</body>
+</html>
