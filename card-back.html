@@ -9,7 +9,6 @@
   <div id="app"><p class="loading">Loading…</p></div>
 
 <script>
-// Detect Trello theme from URL hash context
 try {
   var _ctx = JSON.parse(decodeURIComponent(window.location.hash.slice(1)));
   if (_ctx.context && _ctx.context.initialTheme === 'dark') {
@@ -20,6 +19,9 @@ try {
 var t = TrelloPowerUp.iframe();
 
 var DONE_PAT = /✅|done|completato|fatto|complete/i;
+
+// Cached REST API handle — populated on first successful authorisation.
+var _api = null;
 
 function getRelations() {
   return t.get('board', 'shared', 'relations').then(function(r) { return r || {}; });
@@ -37,24 +39,46 @@ function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function render(currentCard, allCards, relations, completions, lists) {
-  console.log('[PCR render] called for card=' + currentCard.id);
-  console.log('[PCR render] lists:', lists.map(function(l) { return '"' + l.name + '" id=' + l.id; }));
+// Returns the write-scope REST API, triggering the OAuth popup if needed.
+// Use only from explicit user actions (button clicks), not from polling.
+function getWriteApi() {
+  if (_api) return Promise.resolve(_api);
+  return t.getRestApi({ scope: 'write' }).then(function(api) {
+    _api = api;
+    return api;
+  });
+}
 
+// Returns the REST API only when a token is already stored (no popup).
+// Returns null if the user has not yet authorised — callers must fall back gracefully.
+function getStoredApi() {
+  if (_api) return Promise.resolve(_api);
+  return t.get('member', 'private', 'token').then(function(token) {
+    if (!token) return null;
+    return t.getRestApi({ scope: 'write' }).then(function(api) {
+      _api = api;
+      return api;
+    }).catch(function() { return null; });
+  }).catch(function() { return null; });
+}
+
+function render(currentCard, allCards, relations, completions, lists) {
   var cardMap = {};
   allCards.forEach(function(c) { cardMap[c.id] = c; });
 
   var doneLists = lists.filter(function(l) { return DONE_PAT.test(l.name); });
   var doneListIds = new Set(doneLists.map(function(l) { return l.id; }));
-  var doneList = doneLists[0] || null;
 
-  console.log('[PCR render] done lists matched by DONE_PAT:', doneLists.map(function(l) { return '"' + l.name + '"'; }));
-  console.log('[PCR render] doneListId:', doneList ? doneList.id : 'NONE — no list matches DONE_PAT');
+  // Prefer the list named exactly "Fatto"; fall back to the first matching done list.
+  var doneList = doneLists.find(function(l) { return l.name.toLowerCase() === 'fatto'; })
+    || doneLists[0]
+    || null;
+
+  console.log('[PCR render] card=' + currentCard.id + ' doneList=' + (doneList ? '"' + doneList.name + '"' : 'NONE') + ' doneLists=[' + doneLists.map(function(l) { return '"' + l.name + '"'; }).join(',') + ']');
 
   function isDoneByList(id) {
     var card = cardMap[id];
-    var result = !!(card && doneListIds.has(card.idList));
-    return result;
+    return !!(card && doneListIds.has(card.idList));
   }
   function isDone(id) {
     return !!completions[id] || isDoneByList(id);
@@ -68,15 +92,8 @@ function render(currentCard, allCards, relations, completions, lists) {
     .map(function(id) { return cardMap[id]; })
     .filter(Boolean);
 
-  console.log('[PCR render] children count:', myChildren.length);
-  myChildren.forEach(function(child) {
-    var card = cardMap[child.id];
-    console.log('[PCR render]   child id=' + child.id + ' idList=' + (card ? card.idList : 'NOT IN MAP') + ' byList=' + isDoneByList(child.id) + ' byCompletion=' + !!completions[child.id] + ' isDone=' + isDone(child.id));
-  });
-
   var html = '';
 
-  // Parent row
   if (parent) {
     html += '<div class="parent-row">';
     html += '<span class="parent-icon">↑</span>';
@@ -85,12 +102,10 @@ function render(currentCard, allCards, relations, completions, lists) {
     html += '</div>';
   }
 
-  // Subtasks section
   if (myChildren.length > 0) {
     var doneCount = myChildren.filter(function(c) { return isDone(c.id); }).length;
     var total = myChildren.length;
     var pct = Math.round((doneCount / total) * 100);
-    console.log('[PCR render] progress: ' + doneCount + '/' + total + ' = ' + pct + '%');
 
     html += '<div class="progress-header">';
     html += '<span class="progress-text">' + pct + '% complete</span>';
@@ -134,92 +149,115 @@ function render(currentCard, allCards, relations, completions, lists) {
 }
 
 function load() {
-  console.log('[PCR load] fetching data at', new Date().toISOString());
   Promise.all([
     t.card('id', 'idShort', 'name'),
-    t.cards('id', 'name', 'idShort', 'idList'),
+    t.board('id'),
     getRelations(),
     getCompletions(),
-    t.lists('id', 'name')
+    t.lists('id', 'name'),
+    getStoredApi()   // non-blocking: returns null if not yet authorised
   ]).then(function(results) {
-    console.log('[PCR load] data received: card=' + results[0].id + ' allCards=' + results[1].length + ' lists=' + results[4].length);
-    render(results[0], results[1], results[2], results[3], results[4]);
+    var currentCard = results[0];
+    var boardId     = results[1].id;
+    var relations   = results[2];
+    var completions = results[3];
+    var lists       = results[4];
+    var api         = results[5];
+
+    // Use the REST API when a token is available — it bypasses the SDK cache
+    // and always returns the card's current idList. Fall back to t.cards() otherwise.
+    var cardsPromise = api
+      ? api.get('/1/boards/' + boardId + '/cards', { fields: 'id,idList,name,idShort' })
+          .catch(function(err) {
+            // Token may have expired — clear cache and fall back to SDK.
+            console.warn('[PCR load] REST API cards failed, falling back to SDK:', err);
+            if (err && (err.status === 401 || err.status === 403)) _api = null;
+            return t.cards('id', 'name', 'idShort', 'idList');
+          })
+      : t.cards('id', 'name', 'idShort', 'idList');
+
+    return cardsPromise.then(function(allCards) {
+      console.log('[PCR load] card=' + currentCard.id + ' allCards=' + allCards.length + ' via=' + (api ? 'REST' : 'SDK'));
+      render(currentCard, allCards, relations, completions, lists);
+    });
   }).catch(function(err) {
     console.error('[PCR load] ERROR:', err);
   });
 }
 
 function moveCard(childId, targetListId) {
-  console.log('[PCR moveCard] moving card=' + childId + ' to list=' + targetListId);
-  return t.getRestApi({ scope: 'write' }).then(function(api) {
-    console.log('[PCR moveCard] REST API obtained, calling PUT');
+  console.log('[PCR moveCard] moving card=' + childId + ' → list=' + targetListId);
+  return getWriteApi().then(function(api) {
     return api.put('/1/cards/' + childId, { idList: targetListId });
-  }).then(function(result) {
-    console.log('[PCR moveCard] PUT succeeded, result:', result);
-    return result;
   });
+}
+
+function showError(msg) {
+  var app = document.getElementById('app');
+  var el = document.createElement('p');
+  el.style.cssText = 'color:var(--remove-hover);font-size:12px;padding:0 0 6px';
+  el.textContent = msg;
+  app.insertBefore(el, app.firstChild);
+  t.sizeTo('#app').catch(function() {});
+  setTimeout(load, 3000);
 }
 
 window.toggleChild = function(childId) {
   var s = window._state;
-  if (!s) { console.warn('[PCR toggleChild] _state is null, ignoring'); return; }
+  if (!s) { console.warn('[PCR toggleChild] _state is null'); return; }
 
   var card = s.cardMap[childId];
-  var byList = !!(card && s.doneListIds.has(card.idList));
+  var byList       = !!(card && s.doneListIds.has(card.idList));
   var byCompletion = !!s.completions[childId];
-  var alreadyDone = byList || byCompletion;
+  var alreadyDone  = byList || byCompletion;
 
   console.log('[PCR toggleChild] childId=' + childId + ' byList=' + byList + ' byCompletion=' + byCompletion + ' alreadyDone=' + alreadyDone + ' doneListId=' + s.doneListId);
-  if (card) console.log('[PCR toggleChild] card.idList=' + card.idList);
-  else console.warn('[PCR toggleChild] card NOT FOUND in cardMap');
 
   if (!alreadyDone) {
     var originListId = card && card.idList;
-    console.log('[PCR toggleChild] marking DONE — originListId=' + originListId + ' doneListId=' + s.doneListId);
     if (s.doneListId) {
+      // Save origin so we can move the card back if unchecked later.
       getOrigins().then(function(origins) {
         if (originListId) origins[childId] = originListId;
-        console.log('[PCR toggleChild] saving origin ' + originListId + ' for card ' + childId);
         return t.set('board', 'shared', 'origins', origins);
       }).then(function() {
-        console.log('[PCR toggleChild] origin saved, calling moveCard');
         return moveCard(childId, s.doneListId);
       }).then(function() {
-        console.log('[PCR toggleChild] moveCard done, reloading');
         load();
       }).catch(function(err) {
-        console.error('[PCR toggleChild] moveCard FAILED:', err, '— falling back to completions');
-        return getCompletions().then(function(c) {
-          c[childId] = true;
-          return t.set('board', 'shared', 'completions', c);
-        }).then(load);
+        // getWriteApi() will have triggered the OAuth popup if needed.
+        // If we still end up here the user declined or the API call failed —
+        // show a message rather than silently pretending the card moved.
+        console.error('[PCR toggleChild] moveCard FAILED:', err);
+        showError('Could not move card. Please authorise the Power-Up when prompted and try again.');
       });
     } else {
-      console.log('[PCR toggleChild] no doneListId found — using completions fallback');
+      // No list matching DONE_PAT exists on this board — fall back to the
+      // completions flag so the checkbox still works without a "done" list.
+      console.log('[PCR toggleChild] no done list on board — using completions fallback');
       getCompletions().then(function(c) {
         c[childId] = true;
         return t.set('board', 'shared', 'completions', c);
       }).then(load);
     }
   } else if (byList) {
-    console.log('[PCR toggleChild] unmarking DONE (by list) — looking up origin');
+    // Card is done because it lives in a done list — move it back to its origin.
     getOrigins().then(function(origins) {
       var originListId = origins[childId];
-      console.log('[PCR toggleChild] origin for ' + childId + ':', originListId || 'NOT SAVED');
       if (!originListId) {
-        console.warn('[PCR toggleChild] no origin saved, cannot move back');
+        console.warn('[PCR toggleChild] no origin saved for ' + childId + ', cannot move back');
         return load();
       }
       return moveCard(childId, originListId).then(function() {
-        console.log('[PCR toggleChild] moved back to origin, clearing origin entry');
         delete origins[childId];
         return t.set('board', 'shared', 'origins', origins);
       }).then(load).catch(function(err) {
         console.error('[PCR toggleChild] move-back FAILED:', err);
+        showError('Could not move card back. Please authorise the Power-Up when prompted and try again.');
       });
     });
   } else {
-    console.log('[PCR toggleChild] unmarking DONE (by completion) — clearing completions');
+    // Done via completions flag only — just clear the flag.
     getCompletions().then(function(c) {
       delete c[childId];
       return t.set('board', 'shared', 'completions', c);
@@ -229,7 +267,6 @@ window.toggleChild = function(childId) {
 
 window.removeParent = function() {
   var s = window._state;
-  console.log('[PCR removeParent] called');
   getRelations().then(function(relations) {
     delete relations[s.currentCard.id];
     return t.set('board', 'shared', 'relations', relations);
@@ -237,7 +274,6 @@ window.removeParent = function() {
 };
 
 window.removeSubtask = function(childId) {
-  console.log('[PCR removeSubtask] called for childId=' + childId);
   getRelations().then(function(relations) {
     delete relations[childId];
     return t.set('board', 'shared', 'relations', relations);
@@ -245,13 +281,9 @@ window.removeSubtask = function(childId) {
 };
 
 t.render(function() {
-  console.log('[PCR] t.render() triggered at', new Date().toISOString());
   load();
 });
-setInterval(function() {
-  console.log('[PCR] setInterval tick at', new Date().toISOString());
-  load();
-}, 2000);
+setInterval(load, 2000);
 </script>
 </body>
 </html>
