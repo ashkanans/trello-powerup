@@ -87,8 +87,8 @@ function buildBadges(cardId, relations, completions, lists, allCards) {
   var doneListIds = new Set(
     lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
   );
-  console.log('[PCR badges] lists fetched:', lists.map(function(l) { return l.name + '=' + l.id; }));
-  console.log('[PCR badges] done list IDs:', Array.from(doneListIds));
+  // console.log('[PCR badges] lists fetched:', lists.map(function(l) { return l.name + '=' + l.id; }));
+  // console.log('[PCR badges] done list IDs:', Array.from(doneListIds));
 
   var cardListMap = {};
   allCards.forEach(function(c) { cardListMap[c.id] = c.idList; });
@@ -107,16 +107,16 @@ function buildBadges(cardId, relations, completions, lists, allCards) {
   }
 
   var children = Object.keys(relations).filter(function(id) { return relations[id] === cardId; });
-  console.log('[PCR badges] cardId=' + cardId + ' children:', children);
+  // console.log('[PCR badges] cardId=' + cardId + ' children:', children);
 
   if (children.length > 0) {
     children.forEach(function(id) {
-      console.log('[PCR badges]   child ' + id + ' idList=' + cardListMap[id] + ' byCompletion=' + !!completions[id] + ' byList=' + doneListIds.has(cardListMap[id]) + ' isDone=' + isDone(id));
+      // console.log('[PCR badges]   child ' + id + ' idList=' + cardListMap[id] + ' byCompletion=' + !!completions[id] + ' byList=' + doneListIds.has(cardListMap[id]) + ' isDone=' + isDone(id));
     });
     var done = children.filter(isDone).length;
     var total = children.length;
     var pct = Math.round((done / total) * 100);
-    console.log('[PCR badges] progress: ' + done + '/' + total + ' = ' + pct + '%');
+    // console.log('[PCR badges] progress: ' + done + '/' + total + ' = ' + pct + '%');
     badges.push({
       text: pct + '% (' + done + '/' + total + ')',
       color: pct === 100 ? 'green' : (pct === 0 ? 'red' : 'orange'),
@@ -131,19 +131,19 @@ function buildBadges(cardId, relations, completions, lists, allCards) {
 TrelloPowerUp.initialize({
 
   'card-buttons': function(t, options) {
-    console.log('[PCR] card-buttons capability called');
+    // console.log('[PCR] card-buttons capability called');
     var buttons = [
       {
         icon: POWERUP_ICON,
         text: 'Add Parent',
         callback: function(t) {
-          console.log('[PCR] Add Parent button clicked');
+          // console.log('[PCR] Add Parent button clicked');
           return Promise.all([
             t.card('id'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
-            console.log('[PCR] Add Parent data loaded', results[0]);
+            // console.log('[PCR] Add Parent data loaded', results[0]);
             var cardId = results[0].id;
             var allCards = results[1];
             var relations = results[2] || {};
@@ -153,7 +153,7 @@ TrelloPowerUp.initialize({
             var candidates = allCards.filter(function(c) {
               return c.id !== cardId && !descendants.has(c.id);
             });
-            console.log('[PCR] Add Parent candidates:', candidates.length);
+            // console.log('[PCR] Add Parent candidates:', candidates.length);
 
             return t.popup({
               title: 'Set Parent Card',
@@ -169,7 +169,7 @@ TrelloPowerUp.initialize({
               height: 400
             });
           }).catch(function(err) {
-            console.error('[PCR] Add Parent error:', err);
+            // console.error('[PCR] Add Parent error:', err);
           });
         }
       },
@@ -177,13 +177,13 @@ TrelloPowerUp.initialize({
         icon: POWERUP_ICON,
         text: 'Add SubTasks',
         callback: function(t) {
-          console.log('[PCR] Add SubTasks button clicked');
+          // console.log('[PCR] Add SubTasks button clicked');
           return Promise.all([
             t.card('id'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
-            console.log('[PCR] Add SubTasks data loaded', results[0]);
+            // console.log('[PCR] Add SubTasks data loaded', results[0]);
             var cardId = results[0].id;
             var allCards = results[1];
             var relations = results[2] || {};
@@ -196,7 +196,7 @@ TrelloPowerUp.initialize({
             var candidates = allCards.filter(function(c) {
               return c.id !== cardId && !ancestors.has(c.id);
             });
-            console.log('[PCR] Add SubTasks candidates:', candidates.length);
+            // console.log('[PCR] Add SubTasks candidates:', candidates.length);
 
             return t.popup({
               title: 'Add SubTasks',
@@ -212,12 +212,12 @@ TrelloPowerUp.initialize({
               height: 420
             });
           }).catch(function(err) {
-            console.error('[PCR] Add SubTasks error:', err);
+            // console.error('[PCR] Add SubTasks error:', err);
           });
         }
       }
     ];
-    console.log('[PCR] card-buttons returning', buttons.length, 'buttons:', buttons.map(function(b){ return b.text; }));
+    // console.log('[PCR] card-buttons returning', buttons.length, 'buttons:', buttons.map(function(b){ return b.text; }));
     return buttons;
   },
 
@@ -240,7 +240,7 @@ TrelloPowerUp.initialize({
         return buildBadges(cardId, relations, completions, lists, allCards);
       });
     }).catch(function(err) {
-      console.error('[PCR card-badges] ERROR:', err);
+      // console.error('[PCR card-badges] ERROR:', err);
       return [];
     });
   },
@@ -264,7 +264,7 @@ TrelloPowerUp.initialize({
         return buildBadges(cardId, relations, completions, lists, allCards);
       });
     }).catch(function(err) {
-      console.error('[PCR card-detail-badges] ERROR:', err);
+      // console.error('[PCR card-detail-badges] ERROR:', err);
       return [];
     });
   },

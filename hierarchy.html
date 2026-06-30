@@ -145,7 +145,7 @@ Promise.all([
 
   render(listCards, allCards, relations, listNameMap);
 }).catch(function(err) {
-  console.error('[PCR hierarchy] ERROR:', err);
+  // console.error('[PCR hierarchy] ERROR:', err);
   document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy.</p>';
 });
 </script>

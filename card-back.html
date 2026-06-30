@@ -76,7 +76,7 @@ function render(currentCard, allCards, relations, completions, lists) {
     || doneLists[0]
     || null;
 
-  console.log('[PCR render] card=' + currentCard.id + ' doneList=' + (doneList ? '"' + doneList.name + '"' : 'NONE') + ' doneLists=[' + doneLists.map(function(l) { return '"' + l.name + '"'; }).join(',') + ']');
+  // console.log('[PCR render] card=' + currentCard.id + ' doneList=' + (doneList ? '"' + doneList.name + '"' : 'NONE') + ' doneLists=[' + doneLists.map(function(l) { return '"' + l.name + '"'; }).join(',') + ']');
 
   function isDoneByList(id) {
     var card = cardMap[id];
@@ -172,23 +172,23 @@ function load() {
       ? api.get('/1/boards/' + boardId + '/cards', { fields: 'id,idList,name,idShort' })
           .catch(function(err) {
             // Token may have expired — clear cache and fall back to SDK.
-            console.warn('[PCR load] REST API cards failed, falling back to SDK:', err);
+            // console.warn('[PCR load] REST API cards failed, falling back to SDK:', err);
             if (err && (err.status === 401 || err.status === 403)) _api = null;
             return t.cards('id', 'name', 'idShort', 'idList');
           })
       : t.cards('id', 'name', 'idShort', 'idList');
 
     return cardsPromise.then(function(allCards) {
-      console.log('[PCR load] card=' + currentCard.id + ' allCards=' + allCards.length + ' via=' + (api ? 'REST' : 'SDK'));
+      // console.log('[PCR load] card=' + currentCard.id + ' allCards=' + allCards.length + ' via=' + (api ? 'REST' : 'SDK'));
       render(currentCard, allCards, relations, completions, lists);
     });
   }).catch(function(err) {
-    console.error('[PCR load] ERROR:', err);
+    // console.error('[PCR load] ERROR:', err);
   });
 }
 
 function moveCard(childId, targetListId) {
-  console.log('[PCR moveCard] moving card=' + childId + ' → list=' + targetListId);
+  // console.log('[PCR moveCard] moving card=' + childId + ' → list=' + targetListId);
   return getWriteApi().then(function(api) {
     return api.put('/1/cards/' + childId, { idList: targetListId });
   });
@@ -206,14 +206,14 @@ function showError(msg) {
 
 window.toggleChild = function(childId) {
   var s = window._state;
-  if (!s) { console.warn('[PCR toggleChild] _state is null'); return; }
+  if (!s) { // console.warn('[PCR toggleChild] _state is null'); return; }
 
   var card = s.cardMap[childId];
   var byList       = !!(card && s.doneListIds.has(card.idList));
   var byCompletion = !!s.completions[childId];
   var alreadyDone  = byList || byCompletion;
 
-  console.log('[PCR toggleChild] childId=' + childId + ' byList=' + byList + ' byCompletion=' + byCompletion + ' alreadyDone=' + alreadyDone + ' doneListId=' + s.doneListId);
+  // console.log('[PCR toggleChild] childId=' + childId + ' byList=' + byList + ' byCompletion=' + byCompletion + ' alreadyDone=' + alreadyDone + ' doneListId=' + s.doneListId);
 
   if (!alreadyDone) {
     var originListId = card && card.idList;
@@ -230,13 +230,13 @@ window.toggleChild = function(childId) {
         // getWriteApi() will have triggered the OAuth popup if needed.
         // If we still end up here the user declined or the API call failed —
         // show a message rather than silently pretending the card moved.
-        console.error('[PCR toggleChild] moveCard FAILED:', err);
+        // console.error('[PCR toggleChild] moveCard FAILED:', err);
         showError('Could not move card. Please authorise the Power-Up when prompted and try again.');
       });
     } else {
       // No list matching DONE_PAT exists on this board — fall back to the
       // completions flag so the checkbox still works without a "done" list.
-      console.log('[PCR toggleChild] no done list on board — using completions fallback');
+      // console.log('[PCR toggleChild] no done list on board — using completions fallback');
       getCompletions().then(function(c) {
         c[childId] = true;
         return t.set('board', 'shared', 'completions', c);
@@ -247,14 +247,14 @@ window.toggleChild = function(childId) {
     getOrigins().then(function(origins) {
       var originListId = origins[childId];
       if (!originListId) {
-        console.warn('[PCR toggleChild] no origin saved for ' + childId + ', cannot move back');
+        // console.warn('[PCR toggleChild] no origin saved for ' + childId + ', cannot move back');
         return load();
       }
       return moveCard(childId, originListId).then(function() {
         delete origins[childId];
         return t.set('board', 'shared', 'origins', origins);
       }).then(load).catch(function(err) {
-        console.error('[PCR toggleChild] move-back FAILED:', err);
+        // console.error('[PCR toggleChild] move-back FAILED:', err);
         showError('Could not move card back. Please authorise the Power-Up when prompted and try again.');
       });
     });
