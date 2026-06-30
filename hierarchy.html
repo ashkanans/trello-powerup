@@ -11,14 +11,26 @@
       flex-direction: column;
       overflow: hidden;
     }
+    .search-wrap {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .search-wrap .search-input {
+      width: 100%;
+      max-width: 480px;
+    }
     #app {
       flex: 1;
       overflow-y: auto;
-      overflow-x: hidden;
-      padding: 8px 16px 16px;
+      overflow-x: auto;
+      padding: 8px 32px 24px;
     }
     .tree-root {
+      width: max-content;
+      min-width: 360px;
       max-height: none;
+      overflow: visible;
       padding: 0;
     }
   </style>
@@ -26,9 +38,8 @@
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
 </head>
 <body>
-<div class="hierarchy-header">
-  <span class="hierarchy-title" id="list-title">Hierarchy</span>
-  <button class="hierarchy-close" onclick="window._close()" title="Close">✕</button>
+<div class="search-wrap">
+  <input class="search-input" id="search" type="text" placeholder="Search cards…">
 </div>
 <div id="app"><p class="loading" style="padding:12px">Loading…</p></div>
 
@@ -44,53 +55,178 @@ var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
 var listId   = t.arg('listId');
 var listName = t.arg('listName') || '';
 
-document.getElementById('list-title').textContent = listName ? 'Hierarchy — ' + listName : 'Hierarchy';
+var DONE_PAT = /✅|done|completato|fatto|complete/i;
 
-window._close = function() { t.closeModal(); };
-
-window._openCard = function(shortLink) {
-  t.navigate({ url: 'https://trello.com/c/' + shortLink });
+var _state = {
+  allCards:    [],
+  relations:   {},
+  priorities:  {},
+  completions: {},
+  lists:       [],
+  cardMap:     {},
+  listNameMap: {},
+  memberMap:   {},
+  doneListIds: new Set(),
+  collapsed:   new Set()
 };
 
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+document.getElementById('search').placeholder = listName
+  ? 'Search in ' + listName + '…'
+  : 'Search cards…';
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderSubtree(card, cardMap, relations, listNameMap, isChild) {
-  var children = Object.keys(relations)
-    .filter(function(id) { return relations[id] === card.id; })
-    .map(function(id) { return cardMap[id]; })
+// ── Actions ────────────────────────────────────────
+
+window._openCard = function(shortLink) {
+  t.closeModal().then(function() {
+    t.navigate({ url: 'https://trello.com/c/' + shortLink });
+  }).catch(function() {
+    t.navigate({ url: 'https://trello.com/c/' + shortLink });
+  });
+};
+
+window._toggleCollapse = function(cardId) {
+  _state.collapsed.has(cardId) ? _state.collapsed.delete(cardId) : _state.collapsed.add(cardId);
+  renderTree();
+};
+
+window._cyclePriority = function(cardId) {
+  var cur  = _state.priorities[cardId] || 0;
+  var next = cur >= 3 ? 0 : cur + 1;
+  if (next === 0) delete _state.priorities[cardId];
+  else _state.priorities[cardId] = next;
+  t.set('board', 'shared', 'priorities', _state.priorities).then(renderTree);
+};
+
+// ── Helpers ────────────────────────────────────────
+
+function isDone(card) {
+  return !!_state.completions[card.id] || _state.doneListIds.has(card.idList);
+}
+
+function directChildren(cardId) {
+  return Object.keys(_state.relations)
+    .filter(function(id) { return _state.relations[id] === cardId; })
+    .map(function(id) { return _state.cardMap[id]; })
     .filter(Boolean)
-    .sort(function(a, b) { return a.idShort - b.idShort; });
+    .sort(function(a, b) {
+      var pa = _state.priorities[a.id] || 999;
+      var pb = _state.priorities[b.id] || 999;
+      return pa !== pb ? pa - pb : a.idShort - b.idShort;
+    });
+}
 
-  var clickAttr = card.shortLink
-    ? ' onclick="window._openCard(\'' + card.shortLink + '\')" title="Open card"'
-    : '';
-  var cardClass = 'tree-card'
-    + (isChild ? ' is-child' : '')
-    + (card.shortLink ? ' is-clickable' : '');
+function anyDescendantMatches(cardId, q) {
+  return directChildren(cardId).some(function(c) {
+    return c.name.toLowerCase().includes(q) || anyDescendantMatches(c.id, q);
+  });
+}
 
-  var html = '<div class="tree-node">';
-  html += '<div class="' + cardClass + '"' + clickAttr + '>';
-  html += '<span class="card-title">' + escHtml(card.name) + '</span>';
+function dueBadge(due, dueComplete) {
+  if (!due) return '';
+  var d    = new Date(due);
+  var diff = d - Date.now();
+  var cls  = dueComplete          ? 'due-badge done'
+           : diff < 0             ? 'due-badge overdue'
+           : diff < 604800000     ? 'due-badge soon'
+           :                        'due-badge';
+  var label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return '<span class="' + cls + '">' + label + '</span>';
+}
 
-  if (card.idList !== listId) {
-    html += '<span class="tree-list-badge">' + escHtml(listNameMap[card.idList] || '?') + '</span>';
+function avatarHtml(idMembers) {
+  if (!idMembers || !idMembers.length) return '';
+  var html = '<span class="avatar-group">';
+  idMembers.slice(0, 3).forEach(function(mid) {
+    var m = _state.memberMap[mid];
+    if (!m) return;
+    var initials = (m.fullName || m.username || '?')
+      .split(' ').map(function(n) { return n[0] || ''; }).join('').slice(0, 2).toUpperCase();
+    if (m.avatarHash) {
+      html += '<img class="avatar" src="https://trello-avatars.s3.amazonaws.com/' + m.avatarHash + '/30.png"'
+        + ' title="' + escHtml(m.fullName || m.username) + '"'
+        + ' onerror="this.outerHTML=\'<span class=\\\"avatar avatar-init\\\" title=\\\"' + escHtml(m.fullName || '') + '\\\">' + initials + '</span>\'">';
+    } else {
+      html += '<span class="avatar avatar-init" title="' + escHtml(m.fullName || m.username) + '">' + escHtml(initials) + '</span>';
+    }
+  });
+  html += '</span>';
+  return html;
+}
+
+// ── Render ─────────────────────────────────────────
+
+function renderSubtree(card, isChild, q) {
+  if (q) {
+    var selfMatch = card.name.toLowerCase().includes(q);
+    if (!selfMatch && !anyDescendantMatches(card.id, q)) return '';
   }
 
+  var children  = directChildren(card.id);
+  var hasKids   = children.length > 0;
+  var collapsed = _state.collapsed.has(card.id);
+  var done      = children.filter(function(c) { return isDone(c); }).length;
+  var p         = _state.priorities[card.id] || 0;
+  var pLabels   = ['—','P1','P2','P3'];
+
+  var html = '<div class="tree-node">';
+  html += '<div class="tree-card' + (isChild ? ' is-child' : '') + '">';
+
+  // Collapse toggle
+  if (hasKids) {
+    html += '<button class="collapse-btn" onclick="event.stopPropagation();window._toggleCollapse(\'' + card.id + '\')">'
+      + (collapsed ? '▶' : '▼') + '</button>';
+  } else {
+    html += '<span class="collapse-placeholder"></span>';
+  }
+
+  // Status dot
+  html += '<span class="status-dot ' + (isDone(card) ? 'done' : 'todo') + '"></span>';
+
+  // Title — clicking opens card and closes modal
   if (card.shortLink) {
-    html += '<svg class="card-arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    html += '<span class="card-title is-link" onclick="window._openCard(\'' + card.shortLink + '\')">' + escHtml(card.name) + '</span>';
+  } else {
+    html += '<span class="card-title">' + escHtml(card.name) + '</span>';
+  }
+
+  // Progress pill (parents only)
+  if (hasKids) {
+    var pct = Math.round(done / children.length * 100);
+    var pillCls = pct === 100 ? 'progress-pill complete' : pct === 0 ? 'progress-pill zero' : 'progress-pill';
+    html += '<span class="' + pillCls + '">' + done + '/' + children.length + '</span>';
+  }
+
+  // Due date
+  html += dueBadge(card.due, card.dueComplete);
+
+  // Assignee avatars
+  html += avatarHtml(card.idMembers);
+
+  // Priority badge (click to cycle none→P1→P2→P3→none)
+  html += '<button class="priority-badge p' + p + '" onclick="event.stopPropagation();window._cyclePriority(\'' + card.id + '\')" title="Priority (click to cycle)">'
+    + pLabels[p] + '</button>';
+
+  // Cross-list badge
+  if (card.idList !== listId) {
+    html += '<span class="tree-list-badge">' + escHtml(_state.listNameMap[card.idList] || '?') + '</span>';
+  }
+
+  // Open-card chevron
+  if (card.shortLink) {
+    html += '<svg class="card-arrow" viewBox="0 0 16 16" fill="none">'
       + '<path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
       + '</svg>';
   }
 
   html += '</div>';
 
-  if (children.length > 0) {
+  if (hasKids && !collapsed) {
     html += '<div class="tree-children">';
-    children.forEach(function(child) {
-      html += renderSubtree(child, cardMap, relations, listNameMap, true);
-    });
+    children.forEach(function(c) { html += renderSubtree(c, true, q); });
     html += '</div>';
   }
 
@@ -98,56 +234,70 @@ function renderSubtree(card, cardMap, relations, listNameMap, isChild) {
   return html;
 }
 
-function render(listCards, allCards, relations, listNameMap) {
-  var cardMap = {};
-  allCards.forEach(function(c) { cardMap[c.id] = c; });
+function renderTree() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
 
+  var listCards  = _state.allCards.filter(function(c) { return c.idList === listId; });
   var listCardIds = new Set(listCards.map(function(c) { return c.id; }));
 
   var childrenInList = new Set();
   listCards.forEach(function(c) {
-    var parentId = relations[c.id];
-    if (parentId && listCardIds.has(parentId)) {
-      childrenInList.add(c.id);
-    }
+    var pid = _state.relations[c.id];
+    if (pid && listCardIds.has(pid)) childrenInList.add(c.id);
   });
 
   var roots = listCards
     .filter(function(c) { return !childrenInList.has(c.id); })
-    .sort(function(a, b) { return a.idShort - b.idShort; });
-
-  var html = '<div class="tree-root">';
-  if (roots.length === 0) {
-    html += '<p class="empty-hint" style="padding:12px 0">No cards found in this list.</p>';
-  } else {
-    roots.forEach(function(card) {
-      html += renderSubtree(card, cardMap, relations, listNameMap, false);
+    .sort(function(a, b) {
+      var pa = _state.priorities[a.id] || 999;
+      var pb = _state.priorities[b.id] || 999;
+      return pa !== pb ? pa - pb : a.idShort - b.idShort;
     });
-  }
-  html += '</div>';
 
-  document.getElementById('app').innerHTML = html;
+  var content = '';
+  roots.forEach(function(c) { content += renderSubtree(c, false, q); });
+
+  document.getElementById('app').innerHTML = '<div class="tree-root">'
+    + (content || '<p class="empty-hint" style="padding:12px 0">'
+        + (q ? 'No cards match your search.' : 'No cards in this list.') + '</p>')
+    + '</div>';
 }
 
+// ── Load ───────────────────────────────────────────
+
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'idMembers', 'due', 'dueComplete'),
   t.get('board', 'shared', 'relations'),
-  t.lists('id', 'name')
-]).then(function(results) {
-  var allCards  = results[0];
-  var relations = results[1] || {};
-  var lists     = results[2];
+  t.get('board', 'shared', 'priorities'),
+  t.get('board', 'shared', 'completions'),
+  t.lists('id', 'name'),
+  t.board('members')
+]).then(function(res) {
+  _state.allCards    = res[0];
+  _state.relations   = res[1] || {};
+  _state.priorities  = res[2] || {};
+  _state.completions = res[3] || {};
+  _state.lists       = res[4];
 
-  var listNameMap = {};
-  lists.forEach(function(l) { listNameMap[l.id] = l.name; });
+  _state.cardMap = {};
+  _state.allCards.forEach(function(c) { _state.cardMap[c.id] = c; });
 
-  var listCards = allCards.filter(function(c) { return c.idList === listId; });
+  _state.listNameMap = {};
+  _state.lists.forEach(function(l) { _state.listNameMap[l.id] = l.name; });
 
-  render(listCards, allCards, relations, listNameMap);
-}).catch(function(err) {
-  // console.error('[PCR hierarchy] ERROR:', err);
+  _state.memberMap = {};
+  ((res[5] && res[5].members) || []).forEach(function(m) { _state.memberMap[m.id] = m; });
+
+  _state.doneListIds = new Set(
+    _state.lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
+  );
+
+  renderTree();
+}).catch(function() {
   document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy.</p>';
 });
+
+document.getElementById('search').addEventListener('input', renderTree);
 </script>
 </body>
 </html>

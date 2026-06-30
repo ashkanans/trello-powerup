@@ -301,9 +301,8 @@ body {
 
 .tree-root {
   padding: 6px 4px 4px;
-  max-height: 460px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  width: max-content;
+  min-width: 360px;
 }
 
 .tree-root::-webkit-scrollbar { width: 5px; }
@@ -377,12 +376,19 @@ body {
 }
 
 .card-title {
-  flex: 1;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  flex-shrink: 0;
+}
+
+.card-title.is-link {
+  cursor: pointer;
+}
+
+.card-title.is-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
 }
 
 /* Chevron arrow — only visible on hover */
@@ -411,36 +417,131 @@ body {
   white-space: nowrap;
 }
 
-/* ── Hierarchy overlay header ───────────────────── */
+/* ── Collapse toggle ────────────────────────────── */
 
-.hierarchy-header {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.hierarchy-title {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.hierarchy-close {
+.collapse-btn {
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 15px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  font-size: 9px;
+  width: 20px;
+  padding: 0;
+  flex-shrink: 0;
   line-height: 1;
-  transition: background 0.1s, color 0.1s;
+  border-radius: 3px;
+  transition: color 0.1s, background 0.1s;
+  text-align: center;
 }
 
-.hierarchy-close:hover {
-  background: var(--hover-bg);
+.collapse-btn:hover {
   color: var(--text);
+  background: var(--hover-bg);
 }
+
+.collapse-placeholder {
+  display: inline-block;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* ── Status dot ─────────────────────────────────── */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.done { background: #61bd4f; }
+.status-dot.todo { background: var(--cb-border); }
+
+/* ── Progress pill ──────────────────────────────── */
+
+.progress-pill {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.progress-pill.complete {
+  background: rgba(97, 189, 79, 0.15);
+  border-color: #61bd4f;
+  color: #3a9c2a;
+}
+
+.progress-pill.zero {
+  background: rgba(235, 90, 70, 0.12);
+  border-color: var(--remove-hover);
+  color: var(--remove-hover);
+}
+
+/* ── Due date badge ─────────────────────────────── */
+
+.due-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.due-badge.soon    { background: rgba(245,166,35,0.12); border-color: #f5a623; color: #7d5000; }
+.due-badge.overdue { background: rgba(235,90,70,0.12);  border-color: var(--remove-hover); color: var(--remove-hover); }
+.due-badge.done    { background: rgba(97,189,79,0.12);  border-color: #61bd4f; color: #3a9c2a; text-decoration: line-through; }
+
+/* ── Assignee avatars ───────────────────────────── */
+
+.avatar-group {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--bg);
+}
+
+.avatar-init {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+/* ── Priority badge ─────────────────────────────── */
+
+.priority-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+  line-height: 1.6;
+}
+
+.priority-badge:hover { opacity: 0.7; }
+
+.priority-badge.p0 { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.priority-badge.p1 { background: rgba(235,90,70,0.12);  border-color: var(--remove-hover); color: var(--remove-hover); }
+.priority-badge.p2 { background: rgba(245,166,35,0.12); border-color: #f5a623; color: #7d5000; }
+.priority-badge.p3 { background: rgba(97,189,79,0.15);  border-color: #61bd4f; color: #3a9c2a; }
