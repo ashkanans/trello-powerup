@@ -246,9 +246,7 @@ function renderTree() {
     if (pid && listCardIds.has(pid)) childrenInList.add(c.id);
   });
 
-  var roots = listCards
-    .filter(function(c) { return !childrenInList.has(c.id); })
-    .sort(function(a, b) { return (a.pos || 0) - (b.pos || 0); });
+  var roots = listCards.filter(function(c) { return !childrenInList.has(c.id); });
 
   var content = '';
   roots.forEach(function(c) { content += renderSubtree(c, false, q); });
@@ -262,7 +260,7 @@ function renderTree() {
 // ── Load ───────────────────────────────────────────
 
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'idMembers', 'due', 'dueComplete', 'pos'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'idMembers', 'due', 'dueComplete'),
   t.get('board', 'shared', 'relations'),
   t.get('board', 'shared', 'priorities'),
   t.get('board', 'shared', 'completions'),
