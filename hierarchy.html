@@ -402,9 +402,29 @@ function exportByDueDate() {
       group.entries.push({ card: card, at: d.getTime() });
     }
   }
+  // Every calendar day from start to due, inclusive (not just the two
+  // endpoints) — a card spanning a week shows up on all seven days.
+  function daysBetween(startStr, dueStr) {
+    var cur  = new Date(startStr);
+    var last = new Date(dueStr);
+    cur  = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate());
+    last = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+    if (cur > last) return [cur];
+    var days = [];
+    while (cur <= last) {
+      days.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
   dated.forEach(function(c) {
-    if (c.start) addToDateGroup(c, c.start);
-    if (c.due)   addToDateGroup(c, c.due);
+    if (c.start && c.due) {
+      daysBetween(c.start, c.due).forEach(function(day) { addToDateGroup(c, day); });
+    } else if (c.start) {
+      addToDateGroup(c, c.start);
+    } else if (c.due) {
+      addToDateGroup(c, c.due);
+    }
   });
 
   var dateKeys = Object.keys(dateGroups).sort(function(a, b) {
