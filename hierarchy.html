@@ -59,7 +59,7 @@
 <div class="search-wrap">
   <input class="search-input" id="search" type="text" placeholder="Search cards…">
   <button class="export-btn" id="exportBtn" title="Export this list's hierarchy as a .txt outline">Export Tree</button>
-  <button class="export-btn" id="exportDueBtn" title="Export every card on the board, grouped by due date, then by list">Export by Due Date</button>
+  <button class="export-btn" id="exportDueBtn" title="Export the cards shown in this hierarchy, grouped by due date, then by list">Export by Due Date</button>
 </div>
 <div id="app"><p class="loading" style="padding:12px">Loading…</p></div>
 
@@ -327,13 +327,30 @@ function cardState(card) {
   return _state.listNameMap[card.idList] || '?';
 }
 
-// Whole-board report: cards with a due date grouped by calendar day
-// (earliest first), followed by cards with no due date grouped by their
-// current list, in board order. Always uses the card's own name — a child
-// is listed by its own name, never prefixed with its parent's.
+// Every card visible in this list's tree: the roots plus all of their
+// descendants, however deep, regardless of which list a descendant actually
+// lives in (children can be cross-list, same as the tree view itself).
+function collectTreeCards() {
+  var result  = [];
+  var visited = new Set();
+  function walk(card) {
+    if (visited.has(card.id)) return;
+    visited.add(card.id);
+    result.push(card);
+    directChildren(card.id).forEach(walk);
+  }
+  listRoots().forEach(walk);
+  return result;
+}
+
+// Report scoped to this list's tree (not the whole board): cards with a due
+// date grouped by calendar day (earliest first), followed by cards with no
+// due date grouped by their current list. Always uses the card's own name —
+// a child is listed by its own name, never prefixed with its parent's.
 function exportByDueDate() {
-  var withDue    = _state.allCards.filter(function(c) { return !!c.due; });
-  var withoutDue = _state.allCards.filter(function(c) { return !c.due; });
+  var treeCards  = collectTreeCards();
+  var withDue    = treeCards.filter(function(c) { return !!c.due; });
+  var withoutDue = treeCards.filter(function(c) { return !c.due; });
 
   var dueGroups = {};
   withDue.forEach(function(c) {
@@ -377,7 +394,8 @@ function exportByDueDate() {
 
   var today = new Date();
   var stamp = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-  downloadText(lines.join('\n') + '\n', 'tasks-by-due-date-' + stamp + '.txt');
+  var safeName = (listName || 'hierarchy').replace(/[^a-z0-9\-_ ]/gi, '').trim() || 'hierarchy';
+  downloadText(lines.join('\n') + '\n', safeName + '-by-due-date-' + stamp + '.txt');
 }
 
 // ── Load ───────────────────────────────────────────
