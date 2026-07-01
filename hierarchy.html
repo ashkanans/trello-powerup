@@ -58,7 +58,8 @@
 <body>
 <div class="search-wrap">
   <input class="search-input" id="search" type="text" placeholder="Search cards…">
-  <button class="export-btn" id="exportBtn" title="Export this list's hierarchy as a .txt outline">Export .txt</button>
+  <button class="export-btn" id="exportBtn" title="Export this list's hierarchy as a .txt outline">Export Tree</button>
+  <button class="export-btn" id="exportDueBtn" title="Export every card on the board, grouped by due date, then by list">Export by Due Date</button>
 </div>
 <div id="app"><p class="loading" style="padding:12px">Loading…</p></div>
 
@@ -298,22 +299,85 @@ function exportLines(card, depth) {
   return lines;
 }
 
+function downloadText(text, filename) {
+  var blob = new Blob([text], { type: 'text/plain' });
+  var url  = URL.createObjectURL(blob);
+
+  var a = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportHierarchy() {
   var lines = [];
   listRoots().forEach(function(c) { lines = lines.concat(exportLines(c, 0)); });
 
   var text = (listName || 'Hierarchy') + '\n\n' + lines.join('\n') + '\n';
-  var blob = new Blob([text], { type: 'text/plain' });
-  var url  = URL.createObjectURL(blob);
   var safeName = (listName || 'hierarchy').replace(/[^a-z0-9\-_ ]/gi, '').trim() || 'hierarchy';
+  downloadText(text, safeName + '.txt');
+}
 
-  var a = document.createElement('a');
-  a.href     = url;
-  a.download = safeName + '.txt';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+// A card's "state" is just the name of the Trello list it currently sits in
+// — read live from the board via listNameMap, never hardcoded.
+function cardState(card) {
+  return _state.listNameMap[card.idList] || '?';
+}
+
+// Whole-board report: cards with a due date grouped by calendar day
+// (earliest first), followed by cards with no due date grouped by their
+// current list, in board order. Always uses the card's own name — a child
+// is listed by its own name, never prefixed with its parent's.
+function exportByDueDate() {
+  var withDue    = _state.allCards.filter(function(c) { return !!c.due; });
+  var withoutDue = _state.allCards.filter(function(c) { return !c.due; });
+
+  var dueGroups = {};
+  withDue.forEach(function(c) {
+    var d   = new Date(c.due);
+    var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    if (!dueGroups[key]) {
+      dueGroups[key] = {
+        sortKey: new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(),
+        label:   d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear(),
+        cards:   []
+      };
+    }
+    dueGroups[key].cards.push(c);
+  });
+
+  var dueKeys = Object.keys(dueGroups).sort(function(a, b) {
+    return dueGroups[a].sortKey - dueGroups[b].sortKey;
+  });
+
+  var lines = [];
+  dueKeys.forEach(function(key) {
+    var group = dueGroups[key];
+    group.cards.sort(function(a, b) {
+      return new Date(a.due) - new Date(b.due) || a.name.localeCompare(b.name);
+    });
+    lines.push(group.label);
+    group.cards.forEach(function(c) { lines.push(c.name + ' (' + cardState(c) + ')'); });
+    lines.push('');
+  });
+
+  _state.lists.forEach(function(list) {
+    var cards = withoutDue.filter(function(c) { return c.idList === list.id; });
+    if (cards.length === 0) return;
+    cards.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    lines.push(list.name + ':');
+    cards.forEach(function(c) { lines.push(c.name + ' (' + cardState(c) + ')'); });
+    lines.push('');
+  });
+
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+
+  var today = new Date();
+  var stamp = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  downloadText(lines.join('\n') + '\n', 'tasks-by-due-date-' + stamp + '.txt');
 }
 
 // ── Load ───────────────────────────────────────────
@@ -348,6 +412,7 @@ Promise.all([
 
 document.getElementById('search').addEventListener('input', renderTree);
 document.getElementById('exportBtn').addEventListener('click', exportHierarchy);
+document.getElementById('exportDueBtn').addEventListener('click', exportByDueDate);
 </script>
 </body>
 </html>
