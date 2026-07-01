@@ -321,6 +321,18 @@ function exportHierarchy() {
   downloadText(text, safeName + '.txt');
 }
 
+// Strips emoji — and the invisible marks Trello often pairs them with
+// (variation selectors, zero-width joiners/spaces) — from board text.
+// Custom field option labels and list names commonly carry an emoji
+// prefix (e.g. "💀 Zombie") that shouldn't leak into exported files.
+function stripEmoji(s) {
+  return String(s || '')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\u{FE0F}\u{FE0E}\u{200D}\u{200B}\u{FEFF}]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // A card's "state" is its "Stato" custom field value when the board has
 // one (read live via t.board('customFields') + each card's
 // customFieldItems — nothing hardcoded), falling back to the Trello list
@@ -330,9 +342,9 @@ function cardState(card) {
     var items = card.customFieldItems || [];
     var item = items.find(function(ci) { return ci.idCustomField === _state.statoField.id; });
     if (item) {
-      if (item.idValue) return _state.statoOptionMap[item.idValue] || '?';
+      if (item.idValue) return stripEmoji(_state.statoOptionMap[item.idValue]) || '?';
       if (item.value) {
-        if (item.value.text != null)    return item.value.text;
+        if (item.value.text != null)    return stripEmoji(item.value.text);
         if (item.value.number != null)  return String(item.value.number);
         if (item.value.checked != null) return item.value.checked ? 'Yes' : 'No';
         if (item.value.date != null)    return item.value.date;
@@ -340,7 +352,7 @@ function cardState(card) {
     }
     return 'No status';
   }
-  return _state.listNameMap[card.idList] || '?';
+  return stripEmoji(_state.listNameMap[card.idList]) || '?';
 }
 
 // Every card visible in this list's tree: the roots plus all of their
@@ -361,17 +373,14 @@ function collectTreeCards() {
 
 // Report scoped to this list's tree (not the whole board): cards with a due
 // date grouped by calendar day (earliest first), followed by cards with no
-// due date grouped by their current list. Always uses the card's own name —
-// a child is listed by its own name, never prefixed with its parent's.
+// due date grouped by state. Always uses the card's own name — a child is
+// listed by its own name, never prefixed with its parent's. Parent cards
+// (anything with children of its own) are excluded entirely — they're
+// organizational containers here, not tasks; only leaves are listed.
 function exportByDueDate() {
-  var treeCards  = collectTreeCards();
+  var treeCards  = collectTreeCards().filter(function(c) { return directChildren(c.id).length === 0; });
   var withDue    = treeCards.filter(function(c) { return !!c.due; });
   var withoutDue = treeCards.filter(function(c) { return !c.due; });
-
-  // console.log('[PCR export] statoField=', _state.statoField);
-  // console.log('[PCR export] sample states=', treeCards.slice(0, 5).map(function(c) {
-  //   return { name: c.name, idList: c.idList, customFieldItems: c.customFieldItems, resolvedState: cardState(c) };
-  // }));
 
   var dueGroups = {};
   withDue.forEach(function(c) {
@@ -398,7 +407,7 @@ function exportByDueDate() {
       return new Date(a.due) - new Date(b.due) || a.name.localeCompare(b.name);
     });
     lines.push(group.label);
-    group.cards.forEach(function(c) { lines.push(c.name); });
+    group.cards.forEach(function(c) { lines.push(stripEmoji(c.name)); });
     lines.push('');
   });
 
@@ -409,12 +418,13 @@ function exportByDueDate() {
   var stateOrder  = [];
   if (_state.statoField) {
     (_state.statoField.options || []).forEach(function(o) {
-      var text = (o.value && o.value.text) || '';
+      var text = stripEmoji((o.value && o.value.text) || '');
       if (text && !stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
     });
   } else {
     _state.lists.forEach(function(l) {
-      if (!stateGroups[l.name]) { stateGroups[l.name] = []; stateOrder.push(l.name); }
+      var text = stripEmoji(l.name) || '?';
+      if (!stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
     });
   }
   withoutDue.forEach(function(c) {
@@ -428,7 +438,7 @@ function exportByDueDate() {
     if (!cards || cards.length === 0) return;
     cards.sort(function(a, b) { return a.name.localeCompare(b.name); });
     lines.push(state + ':');
-    cards.forEach(function(c) { lines.push(c.name); });
+    cards.forEach(function(c) { lines.push(stripEmoji(c.name)); });
     lines.push('');
   });
 
