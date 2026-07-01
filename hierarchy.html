@@ -368,6 +368,11 @@ function exportByDueDate() {
   var withDue    = treeCards.filter(function(c) { return !!c.due; });
   var withoutDue = treeCards.filter(function(c) { return !c.due; });
 
+  console.log('[PCR export] statoField=', _state.statoField);
+  console.log('[PCR export] sample states=', treeCards.slice(0, 5).map(function(c) {
+    return { name: c.name, idList: c.idList, customFieldItems: c.customFieldItems, resolvedState: cardState(c) };
+  }));
+
   var dueGroups = {};
   withDue.forEach(function(c) {
     var d   = new Date(c.due);
@@ -393,7 +398,7 @@ function exportByDueDate() {
       return new Date(a.due) - new Date(b.due) || a.name.localeCompare(b.name);
     });
     lines.push(group.label);
-    group.cards.forEach(function(c) { lines.push(c.name + ' (' + cardState(c) + ')'); });
+    group.cards.forEach(function(c) { lines.push(c.name); });
     lines.push('');
   });
 
@@ -423,7 +428,7 @@ function exportByDueDate() {
     if (!cards || cards.length === 0) return;
     cards.sort(function(a, b) { return a.name.localeCompare(b.name); });
     lines.push(state + ':');
-    cards.forEach(function(c) { lines.push(c.name + ' (' + cardState(c) + ')'); });
+    cards.forEach(function(c) { lines.push(c.name); });
     lines.push('');
   });
 
@@ -466,6 +471,8 @@ Promise.all([
   // options by id so cardState() can resolve a card's value to display text.
   // Wrapped defensively — an unexpected shape here should degrade to the
   // list-name fallback, not break the whole hierarchy view.
+  console.log('[PCR hierarchy] t.board("customFields") returned:', customFields);
+
   _state.statoField    = null;
   _state.statoOptionMap = {};
   try {
@@ -478,8 +485,12 @@ Promise.all([
       });
     }
   } catch (e) {
+    console.log('[PCR hierarchy] statoField lookup threw:', e);
     _state.statoField = null;
   }
+
+  console.log('[PCR hierarchy] statoField resolved to:', _state.statoField, 'optionMap:', _state.statoOptionMap);
+  console.log('[PCR hierarchy] first card raw object:', _state.allCards[0]);
 
   renderTree();
 }).catch(function(err) {
