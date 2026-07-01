@@ -321,9 +321,25 @@ function exportHierarchy() {
   downloadText(text, safeName + '.txt');
 }
 
-// A card's "state" is just the name of the Trello list it currently sits in
-// — read live from the board via listNameMap, never hardcoded.
+// A card's "state" is its "Stato" custom field value when the board has
+// one (read live via t.board('customFields') + each card's
+// customFieldItems — nothing hardcoded), falling back to the Trello list
+// the card currently sits in for boards without a "Stato" field.
 function cardState(card) {
+  if (_state.statoField) {
+    var items = card.customFieldItems || [];
+    var item = items.find(function(ci) { return ci.idCustomField === _state.statoField.id; });
+    if (item) {
+      if (item.idValue) return _state.statoOptionMap[item.idValue] || '?';
+      if (item.value) {
+        if (item.value.text != null)    return item.value.text;
+        if (item.value.number != null)  return String(item.value.number);
+        if (item.value.checked != null) return item.value.checked ? 'Yes' : 'No';
+        if (item.value.date != null)    return item.value.date;
+      }
+    }
+    return 'No status';
+  }
   return _state.listNameMap[card.idList] || '?';
 }
 
@@ -381,11 +397,32 @@ function exportByDueDate() {
     lines.push('');
   });
 
-  _state.lists.forEach(function(list) {
-    var cards = withoutDue.filter(function(c) { return c.idList === list.id; });
-    if (cards.length === 0) return;
+  // Group by state — ordered using the board's own Stato dropdown order
+  // (or board list order, for boards without a Stato field) so the report
+  // reads in the same order as the workflow itself.
+  var stateGroups = {};
+  var stateOrder  = [];
+  if (_state.statoField) {
+    (_state.statoField.options || []).forEach(function(o) {
+      var text = (o.value && o.value.text) || '';
+      if (text && !stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
+    });
+  } else {
+    _state.lists.forEach(function(l) {
+      if (!stateGroups[l.name]) { stateGroups[l.name] = []; stateOrder.push(l.name); }
+    });
+  }
+  withoutDue.forEach(function(c) {
+    var state = cardState(c);
+    if (!stateGroups[state]) { stateGroups[state] = []; stateOrder.push(state); }
+    stateGroups[state].push(c);
+  });
+
+  stateOrder.forEach(function(state) {
+    var cards = stateGroups[state];
+    if (!cards || cards.length === 0) return;
     cards.sort(function(a, b) { return a.name.localeCompare(b.name); });
-    lines.push(list.name + ':');
+    lines.push(state + ':');
     cards.forEach(function(c) { lines.push(c.name + ' (' + cardState(c) + ')'); });
     lines.push('');
   });
@@ -401,17 +438,19 @@ function exportByDueDate() {
 // ── Load ───────────────────────────────────────────
 
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'due', 'dueComplete'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'due', 'dueComplete', 'customFieldItems'),
   t.get('board', 'shared', 'relations'),
   t.get('board', 'shared', 'priorities'),
   t.get('board', 'shared', 'completions'),
-  t.lists('id', 'name')
+  t.lists('id', 'name'),
+  t.board('customFields')
 ]).then(function(res) {
   _state.allCards    = res[0];
   _state.relations   = res[1] || {};
   _state.priorities  = res[2] || {};
   _state.completions = res[3] || {};
   _state.lists       = res[4];
+  var customFields   = res[5] || [];
 
   _state.cardMap = {};
   _state.allCards.forEach(function(c) { _state.cardMap[c.id] = c; });
@@ -422,6 +461,25 @@ Promise.all([
   _state.doneListIds = new Set(
     _state.lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
   );
+
+  // Locate the "Stato" dropdown field (if the board has one) and index its
+  // options by id so cardState() can resolve a card's value to display text.
+  // Wrapped defensively — an unexpected shape here should degrade to the
+  // list-name fallback, not break the whole hierarchy view.
+  _state.statoField    = null;
+  _state.statoOptionMap = {};
+  try {
+    _state.statoField = customFields.find(function(f) {
+      return (f.name || '').toLowerCase() === 'stato';
+    }) || null;
+    if (_state.statoField) {
+      (_state.statoField.options || []).forEach(function(o) {
+        _state.statoOptionMap[o.id] = (o.value && o.value.text) || '';
+      });
+    }
+  } catch (e) {
+    _state.statoField = null;
+  }
 
   renderTree();
 }).catch(function(err) {
