@@ -111,6 +111,9 @@ function render(currentCard, allCards, relations, completions, lists) {
 
     html += '<div class="progress-header">';
     html += '<span class="progress-text">' + pct + '% complete</span>';
+    if (doneCount > 0) {
+      html += '<button class="remove-btn" onclick="clearDoneChildren()">Clear done (' + doneCount + ')</button>';
+    }
     html += '</div>';
 
     html += '<div class="progress-track">';
@@ -280,6 +283,44 @@ window.removeSubtask = function(childId) {
     delete relations[childId];
     return t.set('board', 'shared', 'relations', relations);
   }).then(load);
+};
+
+// Unlinks every "done" (fatto/completato/list-based) child from this parent.
+// Only removes the subtask relationship — the underlying Trello cards are
+// left exactly where they are, untouched.
+window.clearDoneChildren = function() {
+  var s = window._state;
+  if (!s) return;
+
+  var doneChildIds = Object.keys(s.relations).filter(function(id) {
+    return s.relations[id] === s.currentCard.id;
+  }).filter(function(id) {
+    var card = s.cardMap[id];
+    var byList = !!(card && s.doneListIds.has(card.idList));
+    return byList || !!s.completions[id];
+  });
+
+  if (doneChildIds.length === 0) return;
+
+  getRelations().then(function(relations) {
+    doneChildIds.forEach(function(id) { delete relations[id]; });
+    return t.set('board', 'shared', 'relations', relations);
+  }).then(function() {
+    return Promise.all([getCompletions(), getOrigins()]);
+  }).then(function(results) {
+    var completions = results[0];
+    var origins = results[1];
+    doneChildIds.forEach(function(id) {
+      delete completions[id];
+      delete origins[id];
+    });
+    return Promise.all([
+      t.set('board', 'shared', 'completions', completions),
+      t.set('board', 'shared', 'origins', origins)
+    ]);
+  }).then(load).catch(function(err) {
+    showError('Could not clear done subtasks. Please try again.');
+  });
 };
 
 t.render(function() {
