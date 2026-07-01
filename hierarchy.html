@@ -371,43 +371,54 @@ function collectTreeCards() {
   return result;
 }
 
-// Report scoped to this list's tree (not the whole board): cards with a due
-// date grouped by calendar day (earliest first), followed by cards with no
-// due date grouped by state. Always uses the card's own name — a child is
-// listed by its own name, never prefixed with its parent's. Parent cards
-// (anything with children of its own) are excluded entirely — they're
-// organizational containers here, not tasks; only leaves are listed.
+// Report scoped to this list's tree (not the whole board): cards with a
+// start and/or due date grouped by calendar day (earliest first) — a card
+// with both appears under each date (once only, if they land on the same
+// day) — followed by cards with neither date, grouped by state. Always
+// uses the card's own name — a child is listed by its own name, never
+// prefixed with its parent's. Parent cards (anything with children of its
+// own) are excluded entirely — they're organizational containers here,
+// not tasks; only leaves are listed.
 function exportByDueDate() {
-  var treeCards  = collectTreeCards().filter(function(c) { return directChildren(c.id).length === 0; });
-  var withDue    = treeCards.filter(function(c) { return !!c.due; });
-  var withoutDue = treeCards.filter(function(c) { return !c.due; });
+  var treeCards = collectTreeCards().filter(function(c) { return directChildren(c.id).length === 0; });
+  var dated     = treeCards.filter(function(c) { return !!c.start || !!c.due; });
+  var undated   = treeCards.filter(function(c) { return !c.start && !c.due; });
 
-  var dueGroups = {};
-  withDue.forEach(function(c) {
-    var d   = new Date(c.due);
+  var dateGroups = {};
+  function addToDateGroup(card, dateStr) {
+    var d   = new Date(dateStr);
     var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
-    if (!dueGroups[key]) {
-      dueGroups[key] = {
+    if (!dateGroups[key]) {
+      dateGroups[key] = {
         sortKey: new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(),
         label:   d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear(),
-        cards:   []
+        cardIds: new Set(),
+        entries: []
       };
     }
-    dueGroups[key].cards.push(c);
+    var group = dateGroups[key];
+    if (!group.cardIds.has(card.id)) {
+      group.cardIds.add(card.id);
+      group.entries.push({ card: card, at: d.getTime() });
+    }
+  }
+  dated.forEach(function(c) {
+    if (c.start) addToDateGroup(c, c.start);
+    if (c.due)   addToDateGroup(c, c.due);
   });
 
-  var dueKeys = Object.keys(dueGroups).sort(function(a, b) {
-    return dueGroups[a].sortKey - dueGroups[b].sortKey;
+  var dateKeys = Object.keys(dateGroups).sort(function(a, b) {
+    return dateGroups[a].sortKey - dateGroups[b].sortKey;
   });
 
   var lines = [];
-  dueKeys.forEach(function(key) {
-    var group = dueGroups[key];
-    group.cards.sort(function(a, b) {
-      return new Date(a.due) - new Date(b.due) || a.name.localeCompare(b.name);
+  dateKeys.forEach(function(key) {
+    var group = dateGroups[key];
+    group.entries.sort(function(a, b) {
+      return a.at - b.at || a.card.name.localeCompare(b.card.name);
     });
     lines.push(group.label);
-    group.cards.forEach(function(c) { lines.push(stripEmoji(c.name)); });
+    group.entries.forEach(function(e) { lines.push(stripEmoji(e.card.name)); });
     lines.push('');
   });
 
@@ -427,7 +438,7 @@ function exportByDueDate() {
       if (!stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
     });
   }
-  withoutDue.forEach(function(c) {
+  undated.forEach(function(c) {
     var state = cardState(c);
     if (!stateGroups[state]) { stateGroups[state] = []; stateOrder.push(state); }
     stateGroups[state].push(c);
@@ -453,7 +464,7 @@ function exportByDueDate() {
 // ── Load ───────────────────────────────────────────
 
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'due', 'dueComplete', 'customFieldItems'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'start', 'due', 'dueComplete', 'customFieldItems'),
   t.get('board', 'shared', 'relations'),
   t.get('board', 'shared', 'priorities'),
   t.get('board', 'shared', 'completions'),
