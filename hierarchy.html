@@ -368,10 +368,10 @@ function exportByDueDate() {
   var withDue    = treeCards.filter(function(c) { return !!c.due; });
   var withoutDue = treeCards.filter(function(c) { return !c.due; });
 
-  console.log('[PCR export] statoField=', _state.statoField);
-  console.log('[PCR export] sample states=', treeCards.slice(0, 5).map(function(c) {
-    return { name: c.name, idList: c.idList, customFieldItems: c.customFieldItems, resolvedState: cardState(c) };
-  }));
+  // console.log('[PCR export] statoField=', _state.statoField);
+  // console.log('[PCR export] sample states=', treeCards.slice(0, 5).map(function(c) {
+  //   return { name: c.name, idList: c.idList, customFieldItems: c.customFieldItems, resolvedState: cardState(c) };
+  // }));
 
   var dueGroups = {};
   withDue.forEach(function(c) {
@@ -455,7 +455,10 @@ Promise.all([
   _state.priorities  = res[2] || {};
   _state.completions = res[3] || {};
   _state.lists       = res[4];
-  var customFields   = res[5] || [];
+  // t.board() always resolves to an object keyed by requested field name
+  // (same as t.board('id') -> {id: ...} used elsewhere in this file) —
+  // not the bare array.
+  var customFields   = (res[5] && res[5].customFields) || [];
 
   _state.cardMap = {};
   _state.allCards.forEach(function(c) { _state.cardMap[c.id] = c; });
@@ -471,7 +474,7 @@ Promise.all([
   // options by id so cardState() can resolve a card's value to display text.
   // Wrapped defensively — an unexpected shape here should degrade to the
   // list-name fallback, not break the whole hierarchy view.
-  console.log('[PCR hierarchy] t.board("customFields") returned:', customFields);
+  // console.log('[PCR hierarchy] t.board("customFields") returned:', customFields);
 
   _state.statoField    = null;
   _state.statoOptionMap = {};
@@ -485,12 +488,11 @@ Promise.all([
       });
     }
   } catch (e) {
-    console.log('[PCR hierarchy] statoField lookup threw:', e);
+    // console.log('[PCR hierarchy] statoField lookup threw:', e);
     _state.statoField = null;
   }
 
-  console.log('[PCR hierarchy] statoField resolved to:', _state.statoField, 'optionMap:', _state.statoOptionMap);
-  console.log('[PCR hierarchy] first card raw object:', _state.allCards[0]);
+  // console.log('[PCR hierarchy] statoField resolved to:', _state.statoField, 'optionMap:', _state.statoOptionMap);
 
   renderTree();
 }).catch(function(err) {
