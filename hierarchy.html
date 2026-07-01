@@ -65,7 +65,6 @@ var _state = {
   lists:       [],
   cardMap:     {},
   listNameMap: {},
-  memberMap:   {},
   doneListIds: new Set(),
   collapsed:   new Set()
 };
@@ -137,18 +136,16 @@ function dueBadge(due, dueComplete) {
   return '<span class="' + cls + '">' + label + '</span>';
 }
 
-function avatarHtml(idMembers) {
-  if (!idMembers || !idMembers.length) return '';
+function avatarHtml(members) {
+  if (!members || !members.length) return '';
   var html = '<span class="avatar-group">';
-  idMembers.slice(0, 3).forEach(function(mid) {
-    var m = _state.memberMap[mid];
-    if (!m) return;
+  members.slice(0, 3).forEach(function(m) {
     var initials = (m.fullName || m.username || '?')
       .split(' ').map(function(n) { return n[0] || ''; }).join('').slice(0, 2).toUpperCase();
     if (m.avatarHash) {
       html += '<img class="avatar" src="https://trello-avatars.s3.amazonaws.com/' + m.avatarHash + '/30.png"'
         + ' title="' + escHtml(m.fullName || m.username) + '"'
-        + ' onerror="this.outerHTML=\'<span class=\\\"avatar avatar-init\\\" title=\\\"' + escHtml(m.fullName || '') + '\\\">' + initials + '</span>\'">';
+        + ' onerror="this.style.display=\'none\'">';
     } else {
       html += '<span class="avatar avatar-init" title="' + escHtml(m.fullName || m.username) + '">' + escHtml(initials) + '</span>';
     }
@@ -204,7 +201,7 @@ function renderSubtree(card, isChild, q) {
   html += dueBadge(card.due, card.dueComplete);
 
   // Assignee avatars
-  html += avatarHtml(card.idMembers);
+  html += avatarHtml(card.members);
 
   // Priority badge (click to cycle none→P1→P2→P3→none)
   html += '<button class="priority-badge p' + p + '" onclick="event.stopPropagation();window._cyclePriority(\'' + card.id + '\')" title="Priority (click to cycle)">'
@@ -260,12 +257,11 @@ function renderTree() {
 // ── Load ───────────────────────────────────────────
 
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'idMembers', 'due', 'dueComplete'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'due', 'dueComplete'),
   t.get('board', 'shared', 'relations'),
   t.get('board', 'shared', 'priorities'),
   t.get('board', 'shared', 'completions'),
-  t.lists('id', 'name'),
-  t.board('members')
+  t.lists('id', 'name')
 ]).then(function(res) {
   _state.allCards    = res[0];
   _state.relations   = res[1] || {};
@@ -279,16 +275,13 @@ Promise.all([
   _state.listNameMap = {};
   _state.lists.forEach(function(l) { _state.listNameMap[l.id] = l.name; });
 
-  _state.memberMap = {};
-  ((res[5] && res[5].members) || []).forEach(function(m) { _state.memberMap[m.id] = m; });
-
   _state.doneListIds = new Set(
     _state.lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
   );
 
   renderTree();
-}).catch(function() {
-  document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy.</p>';
+}).catch(function(err) {
+  document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy: ' + (err && (err.message || err.toString())) + '</p>';
 });
 
 document.getElementById('search').addEventListener('input', renderTree);
