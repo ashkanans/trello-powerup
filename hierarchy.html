@@ -15,10 +15,28 @@
       padding: 10px 16px;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .search-wrap .search-input {
       width: 100%;
       max-width: 480px;
+    }
+    .export-btn {
+      flex-shrink: 0;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-subtle);
+      font-size: 12px;
+      padding: 6px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .export-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
     }
     #app {
       flex: 1;
@@ -40,6 +58,8 @@
 <body>
 <div class="search-wrap">
   <input class="search-input" id="search" type="text" placeholder="Search cards…">
+  <button class="export-btn" id="exportBtn" title="Export this list's hierarchy as a .txt outline">Export Tree</button>
+  <button class="export-btn" id="exportDueBtn" title="Export the cards shown in this hierarchy, grouped by due date, then by list">Export by Due Date</button>
 </div>
 <div id="app"><p class="loading" style="padding:12px">Loading…</p></div>
 
@@ -80,11 +100,13 @@ function escHtml(s) {
 // ── Actions ────────────────────────────────────────
 
 window._openCard = function(shortLink) {
-  t.closeModal().then(function() {
-    t.navigate({ url: 'https://trello.com/c/' + shortLink });
-  }).catch(function() {
-    t.navigate({ url: 'https://trello.com/c/' + shortLink });
-  });
+  // Fire both immediately, uncoupled from each other — closeModal() tears
+  // down this iframe, so anything chained onto its .then() (as this used to
+  // be) can silently never run once the frame is gone. t.showCard() is also
+  // Trello's recommended call for opening a non-archived card on this board
+  // (faster than t.navigate(), which is meant for archived/off-board URLs).
+  t.showCard(shortLink).catch(function() {});
+  t.closeModal().catch(function() {});
 };
 
 window._toggleCollapse = function(cardId) {
@@ -231,9 +253,9 @@ function renderSubtree(card, isChild, q) {
   return html;
 }
 
-function renderTree() {
-  var q = document.getElementById('search').value.toLowerCase().trim();
-
+// Root cards for the current list: in-list cards whose parent (if any)
+// isn't also in this list. Shared by renderTree() and exportHierarchy().
+function listRoots() {
   var listCards  = _state.allCards.filter(function(c) { return c.idList === listId; });
   var listCardIds = new Set(listCards.map(function(c) { return c.id; }));
 
@@ -243,7 +265,12 @@ function renderTree() {
     if (pid && listCardIds.has(pid)) childrenInList.add(c.id);
   });
 
-  var roots = listCards.filter(function(c) { return !childrenInList.has(c.id); });
+  return listCards.filter(function(c) { return !childrenInList.has(c.id); });
+}
+
+function renderTree() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var roots = listRoots();
 
   var content = '';
   roots.forEach(function(c) { content += renderSubtree(c, false, q); });
@@ -254,20 +281,225 @@ function renderTree() {
     + '</div>';
 }
 
+// ── Export ─────────────────────────────────────────
+
+// Checkbox-outline lines for a card and its full subtree (ignores collapse
+// state and the search filter — export always covers everything).
+function exportLines(card, depth) {
+  var children = directChildren(card.id);
+  var indent   = '  '.repeat(depth);
+  var box      = isDone(card) ? '[x]' : '[ ]';
+  var pct      = '';
+  if (children.length > 0) {
+    var done = children.filter(function(c) { return isDone(c); }).length;
+    pct = ' (' + Math.round(done / children.length * 100) + '%)';
+  }
+  var lines = [indent + '- ' + box + ' ' + card.name + pct];
+  children.forEach(function(c) { lines = lines.concat(exportLines(c, depth + 1)); });
+  return lines;
+}
+
+function downloadText(text, filename) {
+  var blob = new Blob([text], { type: 'text/plain' });
+  var url  = URL.createObjectURL(blob);
+
+  var a = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportHierarchy() {
+  var lines = [];
+  listRoots().forEach(function(c) { lines = lines.concat(exportLines(c, 0)); });
+
+  var text = (listName || 'Hierarchy') + '\n\n' + lines.join('\n') + '\n';
+  var safeName = (listName || 'hierarchy').replace(/[^a-z0-9\-_ ]/gi, '').trim() || 'hierarchy';
+  downloadText(text, safeName + '.txt');
+}
+
+// Strips emoji — and the invisible marks Trello often pairs them with
+// (variation selectors, zero-width joiners/spaces) — from board text.
+// Custom field option labels and list names commonly carry an emoji
+// prefix (e.g. "💀 Zombie") that shouldn't leak into exported files.
+function stripEmoji(s) {
+  return String(s || '')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\u{FE0F}\u{FE0E}\u{200D}\u{200B}\u{FEFF}]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// A card's "state" is its "Stato" custom field value when the board has
+// one (read live via t.board('customFields') + each card's
+// customFieldItems — nothing hardcoded), falling back to the Trello list
+// the card currently sits in for boards without a "Stato" field.
+function cardState(card) {
+  if (_state.statoField) {
+    var items = card.customFieldItems || [];
+    var item = items.find(function(ci) { return ci.idCustomField === _state.statoField.id; });
+    if (item) {
+      if (item.idValue) return stripEmoji(_state.statoOptionMap[item.idValue]) || '?';
+      if (item.value) {
+        if (item.value.text != null)    return stripEmoji(item.value.text);
+        if (item.value.number != null)  return String(item.value.number);
+        if (item.value.checked != null) return item.value.checked ? 'Yes' : 'No';
+        if (item.value.date != null)    return item.value.date;
+      }
+    }
+    return 'No status';
+  }
+  return stripEmoji(_state.listNameMap[card.idList]) || '?';
+}
+
+// Every card visible in this list's tree: the roots plus all of their
+// descendants, however deep, regardless of which list a descendant actually
+// lives in (children can be cross-list, same as the tree view itself).
+function collectTreeCards() {
+  var result  = [];
+  var visited = new Set();
+  function walk(card) {
+    if (visited.has(card.id)) return;
+    visited.add(card.id);
+    result.push(card);
+    directChildren(card.id).forEach(walk);
+  }
+  listRoots().forEach(walk);
+  return result;
+}
+
+// Report scoped to this list's tree (not the whole board): cards with a
+// start and/or due date grouped by calendar day (earliest first) — a card
+// with both appears under each date (once only, if they land on the same
+// day) — followed by cards with neither date, grouped by state. Always
+// uses the card's own name — a child is listed by its own name, never
+// prefixed with its parent's. Parent cards (anything with children of its
+// own) are excluded entirely — they're organizational containers here,
+// not tasks; only leaves are listed.
+function exportByDueDate() {
+  var treeCards = collectTreeCards().filter(function(c) { return directChildren(c.id).length === 0; });
+  var dated     = treeCards.filter(function(c) { return !!c.start || !!c.due; });
+  var undated   = treeCards.filter(function(c) { return !c.start && !c.due; });
+
+  var dateGroups = {};
+  function addToDateGroup(card, dateStr) {
+    var d   = new Date(dateStr);
+    var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    if (!dateGroups[key]) {
+      dateGroups[key] = {
+        sortKey: new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(),
+        label:   d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear(),
+        cardIds: new Set(),
+        entries: []
+      };
+    }
+    var group = dateGroups[key];
+    if (!group.cardIds.has(card.id)) {
+      group.cardIds.add(card.id);
+      group.entries.push({ card: card, at: d.getTime() });
+    }
+  }
+  // Every calendar day from start to due, inclusive (not just the two
+  // endpoints) — a card spanning a week shows up on all seven days.
+  function daysBetween(startStr, dueStr) {
+    var cur  = new Date(startStr);
+    var last = new Date(dueStr);
+    cur  = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate());
+    last = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+    if (cur > last) return [cur];
+    var days = [];
+    while (cur <= last) {
+      days.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
+  dated.forEach(function(c) {
+    if (c.start && c.due) {
+      daysBetween(c.start, c.due).forEach(function(day) { addToDateGroup(c, day); });
+    } else if (c.start) {
+      addToDateGroup(c, c.start);
+    } else if (c.due) {
+      addToDateGroup(c, c.due);
+    }
+  });
+
+  var dateKeys = Object.keys(dateGroups).sort(function(a, b) {
+    return dateGroups[a].sortKey - dateGroups[b].sortKey;
+  });
+
+  var lines = [];
+  dateKeys.forEach(function(key) {
+    var group = dateGroups[key];
+    group.entries.sort(function(a, b) {
+      return a.at - b.at || a.card.name.localeCompare(b.card.name);
+    });
+    lines.push(group.label);
+    group.entries.forEach(function(e) { lines.push(stripEmoji(e.card.name)); });
+    lines.push('');
+  });
+
+  // Group by state — ordered using the board's own Stato dropdown order
+  // (or board list order, for boards without a Stato field) so the report
+  // reads in the same order as the workflow itself.
+  var stateGroups = {};
+  var stateOrder  = [];
+  if (_state.statoField) {
+    (_state.statoField.options || []).forEach(function(o) {
+      var text = stripEmoji((o.value && o.value.text) || '');
+      if (text && !stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
+    });
+  } else {
+    _state.lists.forEach(function(l) {
+      var text = stripEmoji(l.name) || '?';
+      if (!stateGroups[text]) { stateGroups[text] = []; stateOrder.push(text); }
+    });
+  }
+  undated.forEach(function(c) {
+    var state = cardState(c);
+    if (!stateGroups[state]) { stateGroups[state] = []; stateOrder.push(state); }
+    stateGroups[state].push(c);
+  });
+
+  stateOrder.forEach(function(state) {
+    var cards = stateGroups[state];
+    if (!cards || cards.length === 0) return;
+    cards.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    lines.push(state + ':');
+    cards.forEach(function(c) { lines.push(stripEmoji(c.name)); });
+    lines.push('');
+  });
+
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+
+  var today = new Date();
+  var stamp = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  var safeName = (listName || 'hierarchy').replace(/[^a-z0-9\-_ ]/gi, '').trim() || 'hierarchy';
+  downloadText(lines.join('\n') + '\n', safeName + '-by-due-date-' + stamp + '.txt');
+}
+
 // ── Load ───────────────────────────────────────────
 
 Promise.all([
-  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'due', 'dueComplete'),
+  t.cards('id', 'idShort', 'name', 'idList', 'shortLink', 'members', 'start', 'due', 'dueComplete', 'customFieldItems'),
   t.get('board', 'shared', 'relations'),
   t.get('board', 'shared', 'priorities'),
   t.get('board', 'shared', 'completions'),
-  t.lists('id', 'name')
+  t.lists('id', 'name'),
+  t.board('customFields')
 ]).then(function(res) {
   _state.allCards    = res[0];
   _state.relations   = res[1] || {};
   _state.priorities  = res[2] || {};
   _state.completions = res[3] || {};
   _state.lists       = res[4];
+  // t.board() always resolves to an object keyed by requested field name
+  // (same as t.board('id') -> {id: ...} used elsewhere in this file) —
+  // not the bare array.
+  var customFields   = (res[5] && res[5].customFields) || [];
 
   _state.cardMap = {};
   _state.allCards.forEach(function(c) { _state.cardMap[c.id] = c; });
@@ -279,12 +511,38 @@ Promise.all([
     _state.lists.filter(function(l) { return DONE_PAT.test(l.name); }).map(function(l) { return l.id; })
   );
 
+  // Locate the "Stato" dropdown field (if the board has one) and index its
+  // options by id so cardState() can resolve a card's value to display text.
+  // Wrapped defensively — an unexpected shape here should degrade to the
+  // list-name fallback, not break the whole hierarchy view.
+  // console.log('[PCR hierarchy] t.board("customFields") returned:', customFields);
+
+  _state.statoField    = null;
+  _state.statoOptionMap = {};
+  try {
+    _state.statoField = customFields.find(function(f) {
+      return (f.name || '').toLowerCase() === 'stato';
+    }) || null;
+    if (_state.statoField) {
+      (_state.statoField.options || []).forEach(function(o) {
+        _state.statoOptionMap[o.id] = (o.value && o.value.text) || '';
+      });
+    }
+  } catch (e) {
+    // console.log('[PCR hierarchy] statoField lookup threw:', e);
+    _state.statoField = null;
+  }
+
+  // console.log('[PCR hierarchy] statoField resolved to:', _state.statoField, 'optionMap:', _state.statoOptionMap);
+
   renderTree();
 }).catch(function(err) {
   document.getElementById('app').innerHTML = '<p class="empty-hint" style="padding:8px">Error loading hierarchy: ' + (err && (err.message || err.toString())) + '</p>';
 });
 
 document.getElementById('search').addEventListener('input', renderTree);
+document.getElementById('exportBtn').addEventListener('click', exportHierarchy);
+document.getElementById('exportDueBtn').addEventListener('click', exportByDueDate);
 </script>
 </body>
 </html>
