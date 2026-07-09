@@ -40,31 +40,69 @@ function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Returns the write-scope REST API, triggering the OAuth popup if needed.
-// Use only from explicit user actions (button clicks), not from polling.
-function getWriteApi() {
-  if (_api) return Promise.resolve(_api);
+// Current Trello SDK: getRestApi() returns an auth-helper with getToken().
+// We cache the token and use fetch for all REST calls.
+
+var _cachedToken = null;
+
+function getOAuthToken(silent) {
+  if (_cachedToken) return Promise.resolve(_cachedToken);
   var r;
-  try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return Promise.reject(e); }
-  if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
-  if (typeof r.then === 'function') return r.then(function(api) { _api = api; return api; });
-  _api = r;
-  return Promise.resolve(r);
+  try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return silent ? Promise.resolve(null) : Promise.reject(e); }
+  if (!r) return silent ? Promise.resolve(null) : Promise.reject(new Error('getRestApi returned nothing'));
+  var rp = typeof r.then === 'function' ? r : Promise.resolve(r);
+  return rp.then(function(api) {
+    if (typeof api.getToken !== 'function') return silent ? null : Promise.reject(new Error('no getToken'));
+    if (silent) {
+      // Don't trigger OAuth popup — check if already authorized
+      return t.get('member', 'private', 'token').then(function(stored) {
+        if (!stored) return null;
+        return api.getToken().then(function(tok) { _cachedToken = tok; return tok; }).catch(function() { return null; });
+      }).catch(function() { return null; });
+    }
+    return api.getToken().then(function(tok) { _cachedToken = tok; return tok; });
+  }).catch(function() { return silent ? null : Promise.reject(new Error('getToken failed')); });
 }
 
-// Returns the REST API only when a token is already stored (no popup).
-// Returns null if the user has not yet authorised — callers must fall back gracefully.
+function trelloFetch(method, path, params) {
+  return getOAuthToken(false).then(function(token) {
+    var url = 'https://api.trello.com' + path
+      + '?key=' + encodeURIComponent(TRELLO_APP_KEY)
+      + '&token=' + encodeURIComponent(token);
+    var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+    if (params && (method === 'POST' || method === 'PUT')) opts.body = JSON.stringify(params);
+    if (params && method === 'GET') {
+      Object.keys(params).forEach(function(k) { url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); });
+    }
+    return fetch(url, opts).then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    });
+  });
+}
+
+// Returns a fetch-based API object when the user has already authorized (no popup).
+// Returns null if not yet authorized.
 function getStoredApi() {
   if (_api) return Promise.resolve(_api);
-  return t.get('member', 'private', 'token').then(function(token) {
+  return getOAuthToken(true).then(function(token) {
     if (!token) return null;
-    var r;
-    try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return null; }
-    if (!r) return null;
-    if (typeof r.then === 'function') return r.then(function(api) { _api = api; return api; }).catch(function() { return null; });
-    _api = r;
-    return r;
+    _api = {
+      get: function(path, params) { return trelloFetch('GET', path, params); }
+    };
+    return _api;
   }).catch(function() { return null; });
+}
+
+// Returns a fetch-based API object, triggering OAuth if needed.
+// Only call from explicit user actions.
+function getWriteApi() {
+  return getOAuthToken(false).then(function(token) {
+    return {
+      put: function(path, params) { return trelloFetch('PUT', path, params); },
+      post: function(path, params) { return trelloFetch('POST', path, params); }
+    };
+  });
 }
 
 function render(currentCard, allCards, relations, completions, lists) {

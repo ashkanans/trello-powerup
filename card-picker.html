@@ -34,11 +34,14 @@ try { candidates = JSON.parse(t.arg('candidates') || '[]'); } catch(e) {}
 console.log('[PCR picker] init mode=' + mode + ' card=' + currentCardId + ' list=' + currentListId + ' candidates=' + candidates.length);
 
 // ── REST API ──────────────────────────────────────────
+// The current Trello SDK's getRestApi() returns an auth-helper with getToken().
+// We get the OAuth token from it, then call the Trello REST API via fetch.
 
-var _writeApi = null;
-function getWriteApi() {
-  if (_writeApi) return Promise.resolve(_writeApi);
-  console.log('[PCR picker] requesting write API…');
+var _cachedToken = null;
+
+function getOAuthToken() {
+  if (_cachedToken) return Promise.resolve(_cachedToken);
+  console.log('[PCR picker] requesting OAuth token…');
   var r;
   try {
     r = t.getRestApi({ scope: 'write' });
@@ -47,17 +50,36 @@ function getWriteApi() {
     return Promise.reject(e);
   }
   if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
-  // Current SDK returns the client synchronously; older versions returned a Promise.
-  if (typeof r.then === 'function') {
-    return r.then(function(api) {
-      console.log('[PCR picker] write API acquired (async)');
-      _writeApi = api;
-      return api;
+  console.log('[PCR picker] restApi keys:', Object.keys(r).join(','));
+
+  var rp = typeof r.then === 'function' ? r : Promise.resolve(r);
+  return rp.then(function(api) {
+    if (typeof api.getToken === 'function') {
+      return api.getToken().then(function(token) {
+        console.log('[PCR picker] OAuth token acquired');
+        _cachedToken = token;
+        return token;
+      });
+    }
+    throw new Error('restApi has no getToken(). keys=' + Object.keys(api).join(','));
+  });
+}
+
+function trelloPost(path, params) {
+  return getOAuthToken().then(function(token) {
+    console.log('[PCR picker] POST', path, params);
+    var url = 'https://api.trello.com' + path
+      + '?key=' + encodeURIComponent(TRELLO_APP_KEY)
+      + '&token=' + encodeURIComponent(token);
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {})
+    }).then(function(res) {
+      if (!res.ok) throw new Error('Trello API error: HTTP ' + res.status);
+      return res.json();
     });
-  }
-  console.log('[PCR picker] write API acquired (sync)');
-  _writeApi = r;
-  return Promise.resolve(r);
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────
@@ -175,10 +197,8 @@ window.createAndLink = function(name) {
     createEl.style.pointerEvents = 'none';
   }
 
-  getWriteApi().then(function(api) {
-    console.log('[PCR createAndLink] POSTing new card: name="' + name + '" idList=' + currentListId);
-    return api.post('/1/cards', { name: name, idList: currentListId });
-  }).then(function(newCard) {
+  console.log('[PCR createAndLink] POSTing new card: name="' + name + '" idList=' + currentListId);
+  trelloPost('/1/cards', { name: name, idList: currentListId }).then(function(newCard) {
     console.log('[PCR createAndLink] Card created: id=' + newCard.id + ' #' + newCard.idShort + ' name="' + newCard.name + '"');
     if (mode === 'parent') {
       // selectCard saves the relation and closes the popup
