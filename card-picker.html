@@ -41,27 +41,44 @@ var _cachedToken = null;
 
 function getOAuthToken() {
   if (_cachedToken) return Promise.resolve(_cachedToken);
-  console.log('[PCR picker] requesting OAuth token…');
   var r;
   try {
     r = t.getRestApi({ scope: 'write' });
   } catch(e) {
-    console.error('[PCR picker] getRestApi threw:', e);
     return Promise.reject(e);
   }
   if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
-  console.log('[PCR picker] restApi keys:', Object.keys(r).join(','));
+
+  // The auth helper exposes localStorage + tokenStorageKey so we can read
+  // the token directly — this works even inside a popup where getToken()
+  // cannot open a second OAuth dialog and returns undefined.
+  function readFromStorage(api) {
+    try {
+      var ls = api.localStorage || window.localStorage;
+      var key = api.tokenStorageKey;
+      if (ls && key) return ls.getItem(key) || null;
+    } catch(e) {}
+    return null;
+  }
 
   var rp = typeof r.then === 'function' ? r : Promise.resolve(r);
   return rp.then(function(api) {
-    if (typeof api.getToken === 'function') {
-      return api.getToken().then(function(token) {
-        console.log('[PCR picker] OAuth token acquired');
-        _cachedToken = token;
-        return token;
-      });
+    // 1. Try localStorage first (works in popup context where getToken() can't show OAuth UI)
+    var stored = readFromStorage(api);
+    if (stored) {
+      _cachedToken = stored;
+      return stored;
     }
-    throw new Error('restApi has no getToken(). keys=' + Object.keys(api).join(','));
+    // 2. Try getToken() — works when not already inside a popup (e.g. card-back section)
+    if (typeof api.getToken !== 'function') {
+      throw new Error('no getToken and no stored token');
+    }
+    return api.getToken().then(function(token) {
+      if (!token) token = readFromStorage(api); // retry after the OAuth flow
+      if (!token) throw new Error('token is empty after getToken()');
+      _cachedToken = token;
+      return token;
+    });
   });
 }
 
