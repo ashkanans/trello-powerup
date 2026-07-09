@@ -37,49 +37,21 @@ console.log('[PCR picker] init mode=' + mode + ' card=' + currentCardId + ' list
 // The current Trello SDK's getRestApi() returns an auth-helper with getToken().
 // We get the OAuth token from it, then call the Trello REST API via fetch.
 
-var _cachedToken = null;
+// Token is passed from the card-button callback in index.html, where getToken()
+// can show the OAuth dialog (real user-click context, not a nested iframe).
+var _cachedToken = t.arg('oauthToken') || null;
 
 function getOAuthToken() {
   if (_cachedToken) return Promise.resolve(_cachedToken);
-  var r;
+  // Fallback: read directly from the auth helper's localStorage (if already authorized)
   try {
-    r = t.getRestApi({ scope: 'write' });
-  } catch(e) {
-    return Promise.reject(e);
-  }
-  if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
-
-  // The auth helper exposes localStorage + tokenStorageKey so we can read
-  // the token directly — this works even inside a popup where getToken()
-  // cannot open a second OAuth dialog and returns undefined.
-  function readFromStorage(api) {
-    try {
-      var ls = api.localStorage || window.localStorage;
-      var key = api.tokenStorageKey;
-      if (ls && key) return ls.getItem(key) || null;
-    } catch(e) {}
-    return null;
-  }
-
-  var rp = typeof r.then === 'function' ? r : Promise.resolve(r);
-  return rp.then(function(api) {
-    // 1. Try localStorage first (works in popup context where getToken() can't show OAuth UI)
-    var stored = readFromStorage(api);
-    if (stored) {
-      _cachedToken = stored;
-      return stored;
+    var r = t.getRestApi({ scope: 'write' });
+    if (r && r.localStorage && r.tokenStorageKey) {
+      var stored = r.localStorage.getItem(r.tokenStorageKey);
+      if (stored) { _cachedToken = stored; return Promise.resolve(stored); }
     }
-    // 2. Try getToken() — works when not already inside a popup (e.g. card-back section)
-    if (typeof api.getToken !== 'function') {
-      throw new Error('no getToken and no stored token');
-    }
-    return api.getToken().then(function(token) {
-      if (!token) token = readFromStorage(api); // retry after the OAuth flow
-      if (!token) throw new Error('token is empty after getToken()');
-      _cachedToken = token;
-      return token;
-    });
-  });
+  } catch(e) {}
+  return Promise.reject(new Error('Not authorized. Close this popup and click "Add SubTasks" or "Add Parent" again to authorize.'));
 }
 
 function trelloPost(path, params) {
