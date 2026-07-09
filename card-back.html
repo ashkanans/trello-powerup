@@ -44,10 +44,12 @@ function escHtml(str) {
 // Use only from explicit user actions (button clicks), not from polling.
 function getWriteApi() {
   if (_api) return Promise.resolve(_api);
-  return t.getRestApi({ scope: 'write' }).then(function(api) {
-    _api = api;
-    return api;
-  });
+  var r;
+  try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return Promise.reject(e); }
+  if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
+  if (typeof r.then === 'function') return r.then(function(api) { _api = api; return api; });
+  _api = r;
+  return Promise.resolve(r);
 }
 
 // Returns the REST API only when a token is already stored (no popup).
@@ -56,10 +58,12 @@ function getStoredApi() {
   if (_api) return Promise.resolve(_api);
   return t.get('member', 'private', 'token').then(function(token) {
     if (!token) return null;
-    return t.getRestApi({ scope: 'write' }).then(function(api) {
-      _api = api;
-      return api;
-    }).catch(function() { return null; });
+    var r;
+    try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return null; }
+    if (!r) return null;
+    if (typeof r.then === 'function') return r.then(function(api) { _api = api; return api; }).catch(function() { return null; });
+    _api = r;
+    return r;
   }).catch(function() { return null; });
 }
 

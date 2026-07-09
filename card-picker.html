@@ -38,12 +38,26 @@ console.log('[PCR picker] init mode=' + mode + ' card=' + currentCardId + ' list
 var _writeApi = null;
 function getWriteApi() {
   if (_writeApi) return Promise.resolve(_writeApi);
-  console.log('[PCR picker] requesting write API (OAuth may prompt user)…');
-  return t.getRestApi({ scope: 'write' }).then(function(api) {
-    console.log('[PCR picker] write API acquired');
-    _writeApi = api;
-    return api;
-  });
+  console.log('[PCR picker] requesting write API…');
+  var r;
+  try {
+    r = t.getRestApi({ scope: 'write' });
+  } catch(e) {
+    console.error('[PCR picker] getRestApi threw:', e);
+    return Promise.reject(e);
+  }
+  if (!r) return Promise.reject(new Error('getRestApi returned nothing'));
+  // Current SDK returns the client synchronously; older versions returned a Promise.
+  if (typeof r.then === 'function') {
+    return r.then(function(api) {
+      console.log('[PCR picker] write API acquired (async)');
+      _writeApi = api;
+      return api;
+    });
+  }
+  console.log('[PCR picker] write API acquired (sync)');
+  _writeApi = r;
+  return Promise.resolve(r);
 }
 
 // ── Helpers ───────────────────────────────────────────
