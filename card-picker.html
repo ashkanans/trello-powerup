@@ -20,7 +20,7 @@ try {
   }
 } catch(e) {}
 
-var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
+var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY, appName: 'Parent-Child Relations' });
 
 var mode             = t.arg('mode')             || 'parent';
 var currentCardId    = t.arg('currentCardId')    || '';
