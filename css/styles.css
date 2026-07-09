@@ -297,6 +297,31 @@ body {
   font-size: 12px;
 }
 
+.picker-create {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  color: var(--primary);
+}
+
+.picker-create:hover {
+  background: rgba(0, 82, 204, 0.06);
+}
+
+html.dark .picker-create:hover {
+  background: rgba(87, 157, 255, 0.1);
+}
+
+.create-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.create-label {
+  font-weight: 600;
+  margin-right: 2px;
+}
+
 /* ── Tree / Hierarchy view ──────────────────────── */
 
 .tree-root {

@@ -8,7 +8,7 @@
 </head>
 <body>
 <div class="picker-container">
-  <input class="search-input" id="search" type="text" placeholder="Search Cards" autofocus>
+  <input class="search-input" id="search" type="text" placeholder="Search or create card…" autofocus>
   <div class="picker-list" id="list"></div>
 </div>
 
@@ -22,63 +22,99 @@ try {
 
 var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY });
 
-var mode = t.arg('mode') || 'parent';
-var currentCardId = t.arg('currentCardId') || '';
+var mode             = t.arg('mode')             || 'parent';
+var currentCardId    = t.arg('currentCardId')    || '';
+var currentListId    = t.arg('currentListId')    || '';
 var currentSelectionId = t.arg('currentSelectionId') || '';
-var currentChildIds = new Set();
+var currentChildIds  = new Set();
 try { currentChildIds = new Set(JSON.parse(t.arg('currentChildIds') || '[]')); } catch(e) {}
 var candidates = [];
 try { candidates = JSON.parse(t.arg('candidates') || '[]'); } catch(e) {}
+
+console.log('[PCR picker] init mode=' + mode + ' card=' + currentCardId + ' list=' + currentListId + ' candidates=' + candidates.length);
+
+// ── REST API ──────────────────────────────────────────
+
+var _writeApi = null;
+function getWriteApi() {
+  if (_writeApi) return Promise.resolve(_writeApi);
+  console.log('[PCR picker] requesting write API (OAuth may prompt user)…');
+  return t.getRestApi({ scope: 'write' }).then(function(api) {
+    console.log('[PCR picker] write API acquired');
+    _writeApi = api;
+    return api;
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────
 
 function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── Render ────────────────────────────────────────────
+
 function renderList(items) {
   var list = document.getElementById('list');
-  if (items.length === 0) {
-    list.innerHTML = '<div class="picker-empty">No cards found</div>';
-    return;
+  var q    = document.getElementById('search').value.trim();
+  var html = '';
+
+  // "Create card" row — visible whenever the search box has text
+  if (q) {
+    // encodeURIComponent so names with quotes, ampersands, etc. survive the onclick attribute
+    html += '<div class="picker-item picker-create" onclick="createAndLink(decodeURIComponent(\'' + encodeURIComponent(q) + '\'))">'
+      + '<span class="create-icon">&#xFF0B;</span>'
+      + '<span class="item-name"><span class="create-label">Create</span> &ldquo;' + escHtml(q) + '&rdquo;</span>'
+      + '</div>';
   }
 
-  if (mode === 'children') {
-    list.innerHTML = items.map(function(card) {
+  if (items.length === 0) {
+    html += '<div class="picker-empty">' + (q ? 'No matching cards &mdash; create one above.' : 'No cards found.') + '</div>';
+  } else if (mode === 'children') {
+    html += items.map(function(card) {
       var isChild = currentChildIds.has(card.id);
-      return '<div class="picker-item" onclick="toggleCard(\'' + card.id + '\')">' +
-        '<div class="checkbox' + (isChild ? ' checked' : '') + '">' +
-        (isChild
+      return '<div class="picker-item" onclick="toggleCard(\'' + card.id + '\')">'
+        + '<div class="checkbox' + (isChild ? ' checked' : '') + '">'
+        + (isChild
           ? '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-          : '') +
-        '</div>' +
-        '<span class="item-id">#' + card.idShort + '</span>' +
-        '<span class="item-name' + (isChild ? ' item-selected' : '') + '">' + escHtml(card.name) + '</span>' +
-        '</div>';
+          : '')
+        + '</div>'
+        + '<span class="item-id">#' + card.idShort + '</span>'
+        + '<span class="item-name' + (isChild ? ' item-selected' : '') + '">' + escHtml(card.name) + '</span>'
+        + '</div>';
     }).join('');
   } else {
-    // parent mode: single select, shows a checkmark on the currently selected card
-    list.innerHTML = items.map(function(card) {
+    html += items.map(function(card) {
       var isSel = card.id === currentSelectionId;
-      return '<div class="picker-item' + (isSel ? ' picker-item-active' : '') + '" onclick="selectCard(\'' + card.id + '\')">' +
-        '<span class="item-id">#' + card.idShort + '</span>' +
-        '<span class="item-name">' + escHtml(card.name) + '</span>' +
-        (isSel ? '<span class="item-check">✓</span>' : '') +
-        '</div>';
+      return '<div class="picker-item' + (isSel ? ' picker-item-active' : '') + '" onclick="selectCard(\'' + card.id + '\')">'
+        + '<span class="item-id">#' + card.idShort + '</span>'
+        + '<span class="item-name">' + escHtml(card.name) + '</span>'
+        + (isSel ? '<span class="item-check">&#x2713;</span>' : '')
+        + '</div>';
     }).join('');
   }
+
+  list.innerHTML = html;
 }
 
+// ── Actions ───────────────────────────────────────────
+
 window.toggleCard = function(selectedCardId) {
+  console.log('[PCR picker] toggleCard id=' + selectedCardId);
   t.get('board', 'shared', 'relations').then(function(relations) {
     var map = relations || {};
     if (currentChildIds.has(selectedCardId)) {
       delete map[selectedCardId];
       currentChildIds.delete(selectedCardId);
+      console.log('[PCR picker] toggleCard: removed child=' + selectedCardId);
     } else {
       map[selectedCardId] = currentCardId;
       currentChildIds.add(selectedCardId);
+      console.log('[PCR picker] toggleCard: added child=' + selectedCardId + ' → parent=' + currentCardId);
     }
     return t.set('board', 'shared', 'relations', map);
   }).then(function() {
+    console.log('[PCR picker] toggleCard: relations saved');
     var q = document.getElementById('search').value.toLowerCase();
     var filtered = q ? candidates.filter(function(c) {
       return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
@@ -88,20 +124,76 @@ window.toggleCard = function(selectedCardId) {
 };
 
 window.selectCard = function(selectedCardId) {
+  console.log('[PCR picker] selectCard id=' + selectedCardId);
   t.get('board', 'shared', 'relations').then(function(relations) {
     var map = relations || {};
     if (selectedCardId === currentSelectionId) {
       delete map[currentCardId];
       currentSelectionId = '';
+      console.log('[PCR picker] selectCard: cleared parent for card=' + currentCardId);
     } else {
       map[currentCardId] = selectedCardId;
       currentSelectionId = selectedCardId;
+      console.log('[PCR picker] selectCard: set parent=' + selectedCardId + ' for card=' + currentCardId);
     }
     return t.set('board', 'shared', 'relations', map);
   }).then(function() {
+    console.log('[PCR picker] selectCard: relations saved, closing popup');
     t.closePopup();
   });
 };
+
+window.createAndLink = function(name) {
+  name = (name || '').trim();
+  if (!name) return;
+
+  console.log('[PCR createAndLink] START name="' + name + '" listId=' + currentListId + ' mode=' + mode);
+
+  if (!currentListId) {
+    console.error('[PCR createAndLink] ERROR: currentListId is empty — cannot create card');
+    return;
+  }
+
+  // Dim the create row while the request is in flight to prevent double-click
+  var createEl = document.querySelector('.picker-create');
+  if (createEl) {
+    createEl.style.opacity = '0.5';
+    createEl.style.pointerEvents = 'none';
+  }
+
+  getWriteApi().then(function(api) {
+    console.log('[PCR createAndLink] POSTing new card: name="' + name + '" idList=' + currentListId);
+    return api.post('/1/cards', { name: name, idList: currentListId });
+  }).then(function(newCard) {
+    console.log('[PCR createAndLink] Card created: id=' + newCard.id + ' #' + newCard.idShort + ' name="' + newCard.name + '"');
+    if (mode === 'parent') {
+      // selectCard saves the relation and closes the popup
+      selectCard(newCard.id);
+    } else {
+      // Add to local candidates so the item appears checked in the list
+      candidates.push({ id: newCard.id, name: newCard.name, idShort: newCard.idShort });
+      // Clear the search box, then link (toggle) the new card
+      document.getElementById('search').value = '';
+      toggleCard(newCard.id);
+    }
+  }).catch(function(err) {
+    console.error('[PCR createAndLink] ERROR:', err);
+    // Re-enable the create row
+    if (createEl) {
+      createEl.style.opacity = '1';
+      createEl.style.pointerEvents = '';
+    }
+    // Show a brief error message
+    var errEl = document.createElement('p');
+    errEl.style.cssText = 'color:var(--remove-hover);font-size:11px;padding:4px 8px;margin:0';
+    errEl.textContent = 'Could not create card. Authorise the Power-Up when prompted and try again.';
+    var list = document.getElementById('list');
+    list.insertBefore(errEl, list.firstChild);
+    setTimeout(function() { if (errEl.parentNode) errEl.parentNode.removeChild(errEl); }, 4000);
+  });
+};
+
+// ── Search ────────────────────────────────────────────
 
 document.getElementById('search').addEventListener('input', function(e) {
   var q = e.target.value.toLowerCase();
