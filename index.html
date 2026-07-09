@@ -139,12 +139,13 @@ TrelloPowerUp.initialize({
         callback: function(t) {
           // console.log('[PCR] Add Parent button clicked');
           return Promise.all([
-            t.card('id'),
+            t.card('id', 'idList'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
             // console.log('[PCR] Add Parent data loaded', results[0]);
             var cardId = results[0].id;
+            var currentListId = results[0].idList;
             var allCards = results[1];
             var relations = results[2] || {};
             var parentId = relations[cardId] || '';
@@ -161,12 +162,14 @@ TrelloPowerUp.initialize({
               args: {
                 mode: 'parent',
                 currentCardId: cardId,
+                currentListId: currentListId,
                 currentSelectionId: parentId,
                 candidates: JSON.stringify(candidates.map(function(c) {
                   return { id: c.id, name: c.name, idShort: c.idShort };
                 }))
               },
-              height: 400
+              height: 400,
+              width: 600
             });
           }).catch(function(err) {
             // console.error('[PCR] Add Parent error:', err);
@@ -179,12 +182,13 @@ TrelloPowerUp.initialize({
         callback: function(t) {
           // console.log('[PCR] Add SubTasks button clicked');
           return Promise.all([
-            t.card('id'),
+            t.card('id', 'idList'),
             t.cards('id', 'name', 'idShort'),
             t.get('board', 'shared', 'relations')
           ]).then(function(results) {
             // console.log('[PCR] Add SubTasks data loaded', results[0]);
             var cardId = results[0].id;
+            var currentListId = results[0].idList;
             var allCards = results[1];
             var relations = results[2] || {};
 
@@ -204,12 +208,14 @@ TrelloPowerUp.initialize({
               args: {
                 mode: 'children',
                 currentCardId: cardId,
+                currentListId: currentListId,
                 currentChildIds: JSON.stringify(currentChildIds),
                 candidates: JSON.stringify(candidates.map(function(c) {
                   return { id: c.id, name: c.name, idShort: c.idShort };
                 }))
               },
-              height: 420
+              height: 420,
+              width: 600
             });
           }).catch(function(err) {
             // console.error('[PCR] Add SubTasks error:', err);
