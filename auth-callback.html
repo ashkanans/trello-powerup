@@ -24,7 +24,7 @@
   var h = parseKV(window.location.hash);
   var token = q.token || h.token || '';
   if (token && window.opener) {
-    window.opener.postMessage({ type: 'trello_token', token: token }, '*');
+    window.opener.postMessage(token, '*');
   }
   setTimeout(function() { window.close(); }, 400);
 })();
