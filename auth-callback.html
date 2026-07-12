@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Authorizing…</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           color: #172b4d; background: #fff; padding: 32px; font-size: 14px; }
+  </style>
+</head>
+<body>
+<p>Authorization complete. This window will close automatically…</p>
+<script>
+(function() {
+  function parseKV(str) {
+    var out = {};
+    str.replace(/^[?#&]/, '').split('&').forEach(function(p) {
+      var eq = p.indexOf('=');
+      if (eq > 0) out[decodeURIComponent(p.slice(0, eq))] = decodeURIComponent(p.slice(eq + 1));
+    });
+    return out;
+  }
+  var q = parseKV(window.location.search);
+  var h = parseKV(window.location.hash);
+  var token = q.token || h.token || '';
+  if (token && window.opener) {
+    window.opener.postMessage({ type: 'trello_token', token: token }, '*');
+  }
+  setTimeout(function() { window.close(); }, 400);
+})();
+</script>
+</body>
+</html>

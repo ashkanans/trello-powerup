@@ -34,24 +34,65 @@ try { candidates = JSON.parse(t.arg('candidates') || '[]'); } catch(e) {}
 console.log('[PCR picker] init mode=' + mode + ' card=' + currentCardId + ' list=' + currentListId + ' candidates=' + candidates.length);
 
 // ── REST API ──────────────────────────────────────────
-// The current Trello SDK's getRestApi() returns an auth-helper with getToken().
-// We get the OAuth token from it, then call the Trello REST API via fetch.
+// getToken() silently fails in all iframe contexts because browsers block
+// window.open() called from inside a postMessage handler (not a real user
+// gesture). Fix: show "Authorize Power-Up" inside this visible picker iframe
+// and call window.open() directly from the button click — browsers allow it.
+// auth-callback.html reads the token from the URL fragment and postMessages
+// it back here, where we cache it and re-render.
 
-// Token is passed from the card-button callback in index.html, where getToken()
-// can show the OAuth dialog (real user-click context, not a nested iframe).
+var _restApi = null;
+try { _restApi = t.getRestApi({ scope: 'write' }); } catch(e) {}
+
 var _cachedToken = t.arg('oauthToken') || null;
+
+// Try a token stored during a previous session
+if (!_cachedToken && _restApi) {
+  try {
+    var _ls = _restApi.localStorage || window.localStorage;
+    var _k  = _restApi.tokenStorageKey;
+    if (_k) { var _st = _ls.getItem(_k); if (_st) _cachedToken = _st; }
+  } catch(e) {}
+}
+
+// Token posted back by auth-callback.html after the Trello OAuth popup closes
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'trello_token' || !e.data.token) return;
+  _cachedToken = e.data.token;
+  if (_restApi) {
+    try {
+      var ls = _restApi.localStorage || window.localStorage;
+      var k  = _restApi.tokenStorageKey;
+      if (k) ls.setItem(k, _cachedToken);
+    } catch(ex) {}
+  }
+  // Re-render: auth row disappears, create row appears
+  var q = document.getElementById('search').value.toLowerCase();
+  renderList(q ? candidates.filter(function(c) {
+    return c.name.toLowerCase().includes(q) || String(c.idShort).includes(q);
+  }) : candidates);
+});
+
+// Called from the "Authorize Power-Up" button click — real user gesture
+window.openTrelloAuth = function() {
+  var base = window.location.origin + window.location.pathname.replace(/[^\/]+$/, '');
+  var callbackUrl = base + 'auth-callback.html';
+  var key    = (_restApi && _restApi.appKey)     || TRELLO_APP_KEY;
+  var name   = (_restApi && _restApi.appName)    || 'Parent-Child Relations';
+  var origin = (_restApi && _restApi.authOrigin) || 'https://trello.com';
+  var url = origin + '/1/authorize'
+    + '?expiration=never'
+    + '&name='          + encodeURIComponent(name)
+    + '&scope=read%2Cwrite'
+    + '&key='           + encodeURIComponent(key)
+    + '&callback_method=postMessage'
+    + '&return_url='    + encodeURIComponent(callbackUrl);
+  window.open(url, 'trello_auth', 'width=600,height=700,resizable,scrollbars');
+};
 
 function getOAuthToken() {
   if (_cachedToken) return Promise.resolve(_cachedToken);
-  // Fallback: read directly from the auth helper's localStorage (if already authorized)
-  try {
-    var r = t.getRestApi({ scope: 'write' });
-    if (r && r.localStorage && r.tokenStorageKey) {
-      var stored = r.localStorage.getItem(r.tokenStorageKey);
-      if (stored) { _cachedToken = stored; return Promise.resolve(stored); }
-    }
-  } catch(e) {}
-  return Promise.reject(new Error('Not authorized. Close this popup and click "Add SubTasks" or "Add Parent" again to authorize.'));
+  return Promise.reject(new Error('auth_required'));
 }
 
 function trelloPost(path, params) {
@@ -84,13 +125,21 @@ function renderList(items) {
   var q    = document.getElementById('search').value.trim();
   var html = '';
 
-  // "Create card" row — visible whenever the search box has text
+  // "Create card" row — visible when the search box has text.
+  // If no OAuth token yet, show an "Authorize Power-Up" row instead.
   if (q) {
-    // encodeURIComponent so names with quotes, ampersands, etc. survive the onclick attribute
-    html += '<div class="picker-item picker-create" onclick="createAndLink(decodeURIComponent(\'' + encodeURIComponent(q) + '\'))">'
-      + '<span class="create-icon">&#xFF0B;</span>'
-      + '<span class="item-name"><span class="create-label">Create</span> &ldquo;' + escHtml(q) + '&rdquo;</span>'
-      + '</div>';
+    if (_cachedToken) {
+      // encodeURIComponent so names with quotes/ampersands survive the onclick attr
+      html += '<div class="picker-item picker-create" onclick="createAndLink(decodeURIComponent(\'' + encodeURIComponent(q) + '\'))">'
+        + '<span class="create-icon">&#xFF0B;</span>'
+        + '<span class="item-name"><span class="create-label">Create</span> &ldquo;' + escHtml(q) + '&rdquo;</span>'
+        + '</div>';
+    } else {
+      html += '<div class="picker-item picker-create" onclick="openTrelloAuth()">'
+        + '<span class="create-icon">&#x1F511;</span>'
+        + '<span class="item-name"><span class="create-label">Authorize Power-Up</span> to create cards</span>'
+        + '</div>';
+    }
   }
 
   if (items.length === 0) {

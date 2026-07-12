@@ -21,51 +21,62 @@ var t = TrelloPowerUp.iframe({ appKey: TRELLO_APP_KEY, appName: 'Parent-Child Re
 
 var DONE_PAT = /✅|done|completato|fatto|complete/i;
 
-// Cached REST API handle — populated on first successful authorisation.
-var _api = null;
+// ── REST API ──────────────────────────────────────────
+// getToken() silently fails everywhere (popup blocked outside direct user
+// gesture). Tokens stored via the picker or authorized here live in the
+// auth helper's localStorage. openTrelloAuth() must be called from a real
+// button click so browsers allow the window.open().
 
-function getRelations() {
-  return t.get('board', 'shared', 'relations').then(function(r) { return r || {}; });
-}
-
-function getCompletions() {
-  return t.get('board', 'shared', 'completions').then(function(c) { return c || {}; });
-}
-
-function getOrigins() {
-  return t.get('board', 'shared', 'origins').then(function(o) { return o || {}; });
-}
-
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// Current Trello SDK: getRestApi() returns an auth-helper with getToken().
-// We cache the token and use fetch for all REST calls.
+var _restApi = null;
+try { _restApi = t.getRestApi({ scope: 'write' }); } catch(e) {}
 
 var _cachedToken = null;
+if (_restApi) {
+  try {
+    var _ls = _restApi.localStorage || window.localStorage;
+    var _k  = _restApi.tokenStorageKey;
+    if (_k) { var _st = _ls.getItem(_k); if (_st) _cachedToken = _st; }
+  } catch(e) {}
+}
 
-function getOAuthToken(silent) {
+// Token posted by auth-callback.html after the user approves OAuth
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'trello_token' || !e.data.token) return;
+  _cachedToken = e.data.token;
+  if (_restApi) {
+    try {
+      var ls = _restApi.localStorage || window.localStorage;
+      var k  = _restApi.tokenStorageKey;
+      if (k) ls.setItem(k, _cachedToken);
+    } catch(ex) {}
+  }
+  load();
+});
+
+// Called from "Authorize Power-Up" button — must be a direct click
+window.openTrelloAuth = function() {
+  var base = window.location.origin + window.location.pathname.replace(/[^\/]+$/, '');
+  var callbackUrl = base + 'auth-callback.html';
+  var key    = (_restApi && _restApi.appKey)     || TRELLO_APP_KEY;
+  var name   = (_restApi && _restApi.appName)    || 'Parent-Child Relations';
+  var origin = (_restApi && _restApi.authOrigin) || 'https://trello.com';
+  var url = origin + '/1/authorize'
+    + '?expiration=never'
+    + '&name='          + encodeURIComponent(name)
+    + '&scope=read%2Cwrite'
+    + '&key='           + encodeURIComponent(key)
+    + '&callback_method=postMessage'
+    + '&return_url='    + encodeURIComponent(callbackUrl);
+  window.open(url, 'trello_auth', 'width=600,height=700,resizable,scrollbars');
+};
+
+function getOAuthToken() {
   if (_cachedToken) return Promise.resolve(_cachedToken);
-  var r;
-  try { r = t.getRestApi({ scope: 'write' }); } catch(e) { return silent ? Promise.resolve(null) : Promise.reject(e); }
-  if (!r) return silent ? Promise.resolve(null) : Promise.reject(new Error('getRestApi returned nothing'));
-  var rp = typeof r.then === 'function' ? r : Promise.resolve(r);
-  return rp.then(function(api) {
-    if (typeof api.getToken !== 'function') return silent ? null : Promise.reject(new Error('no getToken'));
-    if (silent) {
-      // Don't trigger OAuth popup — check if already authorized
-      return t.get('member', 'private', 'token').then(function(stored) {
-        if (!stored) return null;
-        return api.getToken().then(function(tok) { _cachedToken = tok; return tok; }).catch(function() { return null; });
-      }).catch(function() { return null; });
-    }
-    return api.getToken().then(function(tok) { _cachedToken = tok; return tok; });
-  }).catch(function() { return silent ? null : Promise.reject(new Error('getToken failed')); });
+  return Promise.reject(new Error('auth_required'));
 }
 
 function trelloFetch(method, path, params) {
-  return getOAuthToken(false).then(function(token) {
+  return getOAuthToken().then(function(token) {
     var url = 'https://api.trello.com' + path
       + '?key=' + encodeURIComponent(TRELLO_APP_KEY)
       + '&token=' + encodeURIComponent(token);
@@ -81,28 +92,38 @@ function trelloFetch(method, path, params) {
   });
 }
 
-// Returns a fetch-based API object when the user has already authorized (no popup).
-// Returns null if not yet authorized.
+// Returns a read-only API handle if we already have a token; null otherwise.
 function getStoredApi() {
-  if (_api) return Promise.resolve(_api);
-  return getOAuthToken(true).then(function(token) {
-    if (!token) return null;
-    _api = {
-      get: function(path, params) { return trelloFetch('GET', path, params); }
-    };
-    return _api;
-  }).catch(function() { return null; });
+  if (!_cachedToken) return Promise.resolve(null);
+  return Promise.resolve({
+    get: function(path, params) { return trelloFetch('GET', path, params); }
+  });
 }
 
-// Returns a fetch-based API object, triggering OAuth if needed.
-// Only call from explicit user actions.
+// Returns a write-capable API handle; rejects with 'auth_required' if no token.
 function getWriteApi() {
-  return getOAuthToken(false).then(function(token) {
+  return getOAuthToken().then(function(token) {
     return {
-      put: function(path, params) { return trelloFetch('PUT', path, params); },
+      put:  function(path, params) { return trelloFetch('PUT',  path, params); },
       post: function(path, params) { return trelloFetch('POST', path, params); }
     };
   });
+}
+
+function getRelations() {
+  return t.get('board', 'shared', 'relations').then(function(r) { return r || {}; });
+}
+
+function getCompletions() {
+  return t.get('board', 'shared', 'completions').then(function(c) { return c || {}; });
+}
+
+function getOrigins() {
+  return t.get('board', 'shared', 'origins').then(function(o) { return o || {}; });
+}
+
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function render(currentCard, allCards, relations, completions, lists) {
@@ -218,7 +239,7 @@ function load() {
           .catch(function(err) {
             // Token may have expired — clear cache and fall back to SDK.
             // console.warn('[PCR load] REST API cards failed, falling back to SDK:', err);
-            if (err && (err.status === 401 || err.status === 403)) _api = null;
+            if (err && (err.status === 401 || err.status === 403)) _cachedToken = null;
             return t.cards('id', 'name', 'idShort', 'idList');
           })
       : t.cards('id', 'name', 'idShort', 'idList');
@@ -239,14 +260,24 @@ function moveCard(childId, targetListId) {
   });
 }
 
-function showError(msg) {
+function showError(msg, showAuthBtn) {
   var app = document.getElementById('app');
-  var el = document.createElement('p');
-  el.style.cssText = 'color:var(--remove-hover);font-size:12px;padding:0 0 6px';
-  el.textContent = msg;
+  var el = document.createElement('div');
+  el.style.cssText = 'padding:0 0 8px';
+  var p = document.createElement('p');
+  p.style.cssText = 'color:var(--remove-hover);font-size:12px;' + (showAuthBtn ? 'margin-bottom:6px' : '');
+  p.textContent = msg;
+  el.appendChild(p);
+  if (showAuthBtn) {
+    var btn = document.createElement('button');
+    btn.textContent = 'Authorize Power-Up';
+    btn.setAttribute('onclick', 'openTrelloAuth()');
+    btn.style.cssText = 'font-size:11px;padding:3px 10px;border:1px solid var(--primary);border-radius:4px;background:none;color:var(--primary);cursor:pointer';
+    el.appendChild(btn);
+  }
   app.insertBefore(el, app.firstChild);
   t.sizeTo('#app').catch(function() {});
-  setTimeout(load, 3000);
+  if (!showAuthBtn) setTimeout(load, 3000);
 }
 
 window.toggleChild = function(childId) {
@@ -272,11 +303,12 @@ window.toggleChild = function(childId) {
       }).then(function() {
         load();
       }).catch(function(err) {
-        // getWriteApi() will have triggered the OAuth popup if needed.
-        // If we still end up here the user declined or the API call failed —
-        // show a message rather than silently pretending the card moved.
         // console.error('[PCR toggleChild] moveCard FAILED:', err);
-        showError('Could not move card. Please authorise the Power-Up when prompted and try again.');
+        var isAuth = err && err.message === 'auth_required';
+        showError(
+          isAuth ? 'Authorize the Power-Up to move cards between lists.' : 'Could not move card. Try again.',
+          isAuth
+        );
       });
     } else {
       // No list matching DONE_PAT exists on this board — fall back to the
@@ -300,7 +332,11 @@ window.toggleChild = function(childId) {
         return t.set('board', 'shared', 'origins', origins);
       }).then(load).catch(function(err) {
         // console.error('[PCR toggleChild] move-back FAILED:', err);
-        showError('Could not move card back. Please authorise the Power-Up when prompted and try again.');
+        var isAuth = err && err.message === 'auth_required';
+        showError(
+          isAuth ? 'Authorize the Power-Up to move cards between lists.' : 'Could not move card back. Try again.',
+          isAuth
+        );
       });
     });
   } else {
