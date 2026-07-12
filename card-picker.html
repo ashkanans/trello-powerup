@@ -55,10 +55,18 @@ if (!_cachedToken && _restApi) {
   } catch(e) {}
 }
 
-// Token posted back by auth-callback.html after the Trello OAuth popup closes
+// Token posted by Trello's /1/token/approve page (raw string) after the user
+// approves OAuth. return_url is used as the postMessage targetOrigin, not as
+// a redirect destination — auth-callback.html is never actually loaded.
 window.addEventListener('message', function(e) {
-  if (!e.data || e.data.type !== 'trello_token' || !e.data.token) return;
-  _cachedToken = e.data.token;
+  var tok = null;
+  if (typeof e.data === 'string' && e.data.length > 10 && e.origin === 'https://trello.com') {
+    tok = e.data;  // Trello's token/approve page: postMessage(token, return_url_origin)
+  } else if (e.data && e.data.type === 'trello_token' && e.data.token) {
+    tok = e.data.token;  // auth-callback.html fallback (kept for safety)
+  }
+  if (!tok) return;
+  _cachedToken = tok;
   if (_restApi) {
     try {
       var ls = _restApi.localStorage || window.localStorage;
